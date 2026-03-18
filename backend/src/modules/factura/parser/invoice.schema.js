@@ -28,7 +28,7 @@ const INVOICE_ITEM_SCHEMA = {
     subtotal: { type: 'NUMBER', nullable: true },
     categoria: {
       type: 'STRING',
-      enum: COMAP_CATEGORIES,
+      enum: INVOICE_CATEGORIES_SCHEMA,
       nullable: true,
     },
   },

@@ -17,6 +17,7 @@ function mapGeminiItemToLegacy(item, archivo) {
     monto: item.subtotal || null,
     moneda: item.moneda === '$' ? 'UYU' : (item.moneda || null),
     cantidad: item.cantidad || 1,
+    categoria: item.categoria || null,
     rut_receptor: item.rut_receptor || null,
     razon_social_receptor: item.razon_social_receptor || null,
     texto_extraido: true,
