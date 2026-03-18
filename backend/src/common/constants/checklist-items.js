@@ -1,0 +1,133 @@
+/**
+ * Checklist items for COMAP presentation per Decreto 329/025
+ */
+const CHECKLIST_PRESENTACION = [
+  {
+    id: '1.1',
+    seccion: '1. Documentos formales generales',
+    descripcion: 'Formulario de Inicio de Trámite Digital (FITD) completado en portal VUI/VUCE',
+    acepta_archivo: false,
+    nota: 'Se completa online en: vui.gub.uy',
+  },
+  {
+    id: '1.2',
+    seccion: '1. Documentos formales generales',
+    descripcion: 'Certificado Notarial electrónico (vigencia persona jurídica, representación, cédulas)',
+    acepta_archivo: true,
+    nota: 'Se exime a empresas unipersonales',
+  },
+  {
+    id: '1.3',
+    seccion: '1. Documentos formales generales',
+    descripcion: 'Formulario DGI 6906 – Consulta de Datos Registrales (PDF)',
+    acepta_archivo: true,
+    nota: '',
+  },
+  {
+    id: '1.4',
+    seccion: '1. Documentos formales generales',
+    descripcion: 'Constancia del Banco Central del Uruguay sobre orígenes de capitales (PDF)',
+    acepta_archivo: true,
+    nota: '',
+  },
+  {
+    id: '1.5',
+    seccion: '1. Documentos formales generales',
+    descripcion: 'Certificado Único de DGI vigente',
+    acepta_archivo: true,
+    nota: 'Adjuntar en sección Adjuntos del FITD',
+  },
+  {
+    id: '1.6',
+    seccion: '1. Documentos formales generales',
+    descripcion: 'Certificado Único de BPS vigente',
+    acepta_archivo: true,
+    nota: 'Adjuntar en sección Adjuntos del FITD',
+  },
+  {
+    id: '2.1',
+    seccion: '2. Documentos formales particulares',
+    descripcion: 'Declaración jurada o Constancia DINAPYME para MIPYME',
+    acepta_archivo: true,
+    nota: 'Solo para empresas que soliciten beneficio adicional MIPYME',
+  },
+  {
+    id: '2.2',
+    seccion: '2. Documentos formales particulares',
+    descripcion: 'Constancia CIU o solicitud de CEFN (Fabricación Nacional)',
+    acepta_archivo: true,
+    nota: 'Solo para empresas que soliciten exoneración de tributos a la importación',
+  },
+  {
+    id: '2.3',
+    seccion: '2. Documentos formales particulares',
+    descripcion: 'Constancia de inicio de trámite DINACEA (Impacto Ambiental)',
+    acepta_archivo: true,
+    nota: 'Solo si corresponde según Decreto 349/005',
+  },
+  {
+    id: '2.4',
+    seccion: '2. Documentos formales particulares',
+    descripcion: 'Constancia de presentación de Plan de Uso y Manejo de Suelos (DRNR)',
+    acepta_archivo: true,
+    nota: 'Solo para empresas agropecuarias con actividad agrícola',
+  },
+  {
+    id: '2.5',
+    seccion: '2. Documentos formales particulares',
+    descripcion: 'Autorización MGAP o Licencia IRCCA (Cannabis)',
+    acepta_archivo: true,
+    nota: 'Solo para empresas con producción/industrialización de Cannabis Sativa',
+  },
+  {
+    id: '2.6',
+    seccion: '2. Documentos formales particulares',
+    descripcion: 'Formulario I+ completo con archivos de respaldo',
+    acepta_archivo: true,
+    nota: 'Solo para empresas que opten por el Indicador I+',
+  },
+  {
+    id: '2.7',
+    seccion: '2. Documentos formales particulares',
+    descripcion: 'Formulario Sostenibilidad Ambiental con información técnica de respaldo',
+    acepta_archivo: true,
+    nota: 'Solo para empresas que opten por el Indicador Sostenibilidad Ambiental',
+  },
+  {
+    id: '2.8',
+    seccion: '2. Documentos formales particulares',
+    descripcion: 'Información técnica para Indicador Estratégico',
+    acepta_archivo: true,
+    nota: 'Solo para empresas que opten por Indicador Estratégico',
+  },
+  {
+    id: '3.1',
+    seccion: '3. Inversiones',
+    descripcion: 'Cuadro de Inversiones, Cronograma y Rubrado de Obra Civil con comprobantes',
+    acepta_archivo: true,
+    nota: 'Cada fila debe tener hipervínculo a los comprobantes en PDF',
+  },
+  {
+    id: '3.2',
+    seccion: '3. Inversiones',
+    descripcion: 'Formulario Plan de Implantación de Plantines firmado por Ing. Agrónomo',
+    acepta_archivo: true,
+    nota: 'Solo para empresas con inversiones en árboles/arbustos frutales plurianuales',
+  },
+  {
+    id: '3.3',
+    seccion: '3. Inversiones',
+    descripcion: 'Rubrado de Obra Civil (PDF) firmado por Arquitecto/Ing. Civil + documentación de respaldo',
+    acepta_archivo: true,
+    nota: 'Solo para empresas con inversiones en Obra Civil',
+  },
+  {
+    id: '3.4',
+    seccion: '3. Inversiones',
+    descripcion: 'Constancia de inscripción en BPS y permiso de construcción (obra civil iniciada)',
+    acepta_archivo: true,
+    nota: 'Solo si la obra civil ya estuviese iniciada al momento de la presentación',
+  },
+];
+
+module.exports = { CHECKLIST_PRESENTACION };

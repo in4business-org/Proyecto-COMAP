@@ -1,0 +1,22 @@
+{
+  "name": "comap-backend",
+  "version": "1.0.0",
+  "description": "COMAP Investment Projects Manager - Backend API",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "node src/main.js",
+    "dev": "nodemon src/main.js"
+  },
+  "dependencies": {
+    "@google/genai": "^1.45.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.3.1",
+    "exceljs": "^4.4.0",
+    "express": "^5.1.0",
+    "multer": "^2.0.1",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  }
+}
