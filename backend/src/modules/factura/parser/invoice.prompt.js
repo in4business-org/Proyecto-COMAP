@@ -21,7 +21,8 @@ Usá exactamente esta estructura:
     "rut_receptor": "string o null",
     "razon_social_receptor": "string o null",
     "moneda": "$ | USD | null",
-    "subtotal": number o null
+    "subtotal": number o null,
+    "categoria": "Maquinaria | Equipos | Instalaciones | Vehiculos | Materiales | Mano de Obra | Leyes Sociales | Honorarios | null"
   }
 ]
 
@@ -64,6 +65,23 @@ Reglas de serie_numero_factura:
   - "A 095921" -> "A095921"
   - "A-095921" -> "A095921"
   - "A / 095921" -> "A095921"
+
+Además, devolvé un campo "categoria" para cada item.
+
+La categoría debe ser una de estas opciones exactas:
+- Maquinaria
+- Equipos
+- Instalaciones
+- Vehiculos
+- Materiales
+- Mano de Obra
+- Leyes Sociales
+- Honorarios
+
+Reglas para categoria:
+- Elegí la categoría más probable según la descripción del item y el contexto de la factura.
+- Si no es posible inferirla con suficiente confianza, devolver null.
+- No inventar categorías fuera de la lista.
 
 Validación final:
 - La salida debe ser JSON válido.
