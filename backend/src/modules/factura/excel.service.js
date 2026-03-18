@@ -4,14 +4,14 @@ const { TEMPLATE_CUADRO } = require('../../config/storage.config');
 const { normalizarMonto, normalizarFecha } = require('../../common/utils/normalize');
 
 const CATEGORY_CONFIG = {
-  Honorarios: { order: 8, insertRow: 25 },
+  'Honorarios': { order: 8, insertRow: 25 },
   'Leyes Sociales': { order: 7, insertRow: 24 },
   'Mano de Obra': { order: 6, insertRow: 23 },
-  Materiales: { order: 5, insertRow: 22 },
-  Vehiculos: { order: 4, insertRow: 16 },
-  Instalaciones: { order: 3, insertRow: 15 },
-  Equipos: { order: 2, insertRow: 14 },
-  Maquinaria: { order: 1, insertRow: 13 },
+  'Materiales': { order: 5, insertRow: 22 },
+  'Vehiculos': { order: 4, insertRow: 16 },
+  'Instalaciones': { order: 3, insertRow: 15 },
+  'Equipos': { order: 2, insertRow: 14 },
+  'Maquinaria': { order: 1, insertRow: 13 },
 };
 
 class ExcelService {
@@ -49,7 +49,7 @@ class ExcelService {
     }
 
     // Copiar estilo de A a M
-    for (let colNumber = 1; colNumber <= 13; colNumber++) {
+    for (let colNumber = 1; colNumber <= 14; colNumber++) {
       const sourceCell = sourceRow.getCell(colNumber);
       const targetCell = targetRow.getCell(colNumber);
 
@@ -57,13 +57,13 @@ class ExcelService {
     }
 
     // Sacar negrita en B y C
-    [2, 3].forEach((colNumber) => {
-      const cell = targetRow.getCell(colNumber);
+    for (let col = 2; col <= 14; col++) {
+      const cell = targetRow.getCell(col);
       cell.font = {
         ...(cell.font || {}),
         bold: false,
       };
-    });
+    };
   }
 
   writeFacturaRow(ws, rowNumber, factura) {
@@ -154,7 +154,7 @@ class ExcelService {
       const config = CATEGORY_CONFIG[categoria];
 
       if (!config) {
-        throw new Error(`Categoría no válida: ${categoria}`);
+        throw new Error(`Categoría no válida: ${categoria} en factura ${factura.numero_factura}`);
       }
 
       const rowNumber = config.insertRow;
