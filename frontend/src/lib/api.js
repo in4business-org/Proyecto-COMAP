@@ -67,6 +67,11 @@ export const facturas = {
     files.forEach(f => fd.append('files', f));
     return request('/simple/upload', { method: 'POST', body: fd });
   },
+  updateResults: (empresaId, proyectoId, periodo, results) =>
+    request(`/empresas/${empresaId}/proyectos/${proyectoId}/${periodo}`, {
+      method: 'PUT',
+      body: JSON.stringify({ results }),
+    }),
   simpleGetResults: () => request('/simple/resultados'),
   simpleAnalyze: () => request('/simple/analizar'),
   simpleExcel: () => request('/simple/excel'),

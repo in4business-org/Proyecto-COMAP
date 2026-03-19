@@ -61,6 +61,26 @@ router.get('/empresas/:empresaId/proyectos/:proyectoId/:periodo/resultados', (re
   res.json(data || []);
 });
 
+// PUT  update persisted results
+router.put('/empresas/:empresaId/proyectos/:proyectoId/:periodo', (req, res) => {
+  try {
+    const { empresaId, proyectoId, periodo } = req.params;
+    const { results } = req.body;
+
+    if (!Array.isArray(results)) {
+      return res.status(400).json({ error: 'results debe ser un array' });
+    }
+
+    guardarResultados(empresaId, proyectoId, periodo, results);
+    const updated = leerResultados(empresaId, proyectoId, periodo) || [];
+
+    res.json(updated);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET  analyze invoices + persist results
 router.get('/empresas/:empresaId/proyectos/:proyectoId/:periodo/analizar', async (req, res) => {
   try {
@@ -95,7 +115,7 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/excel', async (
     try {
       const info = empresaService.getById(empresaId);
       fechaBalance = info ? info.fecha_balance : null;
-    } catch {}
+    } catch { }
 
     const timestamp = new Date().toISOString().replace(/[-:T]/g, '').substring(0, 15);
     const nombre = `cuadro_inversiones_${empresaId}_${periodo}_${timestamp}.xlsx`;
@@ -139,7 +159,7 @@ router.post('/simple/upload', upload.array('files'), (req, res) => {
 router.get('/simple/resultados', (_req, res) => {
   if (fs.existsSync(SIMPLE_RESULTS_PATH)) {
     try { return res.json(JSON.parse(fs.readFileSync(SIMPLE_RESULTS_PATH, 'utf-8'))); }
-    catch {}
+    catch { }
   }
   res.json([]);
 });
@@ -159,7 +179,7 @@ router.get('/simple/excel', async (_req, res) => {
   try {
     let resultados = [];
     if (fs.existsSync(SIMPLE_RESULTS_PATH)) {
-      try { resultados = JSON.parse(fs.readFileSync(SIMPLE_RESULTS_PATH, 'utf-8')); } catch {}
+      try { resultados = JSON.parse(fs.readFileSync(SIMPLE_RESULTS_PATH, 'utf-8')); } catch { }
     }
     if (!resultados.length) {
       resultados = await facturaService.analizarFacturas(UPLOADS_DIR);
@@ -185,9 +205,9 @@ router.post('/simple/asociar', async (req, res) => {
 
     let resultadosSimples = [];
     if (fs.existsSync(SIMPLE_RESULTS_PATH)) {
-      try { resultadosSimples = JSON.parse(fs.readFileSync(SIMPLE_RESULTS_PATH, 'utf-8')); } catch {}
+      try { resultadosSimples = JSON.parse(fs.readFileSync(SIMPLE_RESULTS_PATH, 'utf-8')); } catch { }
     }
-    
+
     if (!resultadosSimples.length) {
       return res.status(400).json({ error: 'No hay facturas procesadas para asociar' });
     }
@@ -211,16 +231,16 @@ router.post('/simple/asociar', async (req, res) => {
     // Unir resultados lógicos (append y reemplazar duplicados de archivo)
     let resultadosDestino = leerResultados(empresaId, proyectoId, periodo) || [];
     const destinoMap = new Map(resultadosDestino.map(r => [r.archivo, r]));
-    
+
     for (const r of resultadosSimples) {
       destinoMap.set(r.archivo, r);
     }
-    
+
     resultadosDestino = Array.from(destinoMap.values());
     guardarResultados(empresaId, proyectoId, periodo, resultadosDestino);
 
     // Limpiar el modo simple para que quede vacío después de asociar
-    try { fs.unlinkSync(SIMPLE_RESULTS_PATH); } catch (e) {}
+    try { fs.unlinkSync(SIMPLE_RESULTS_PATH); } catch (e) { }
 
     res.json({ success: true, asociados: resultadosSimples.length, archivos_copiados: copiados });
   } catch (e) {

@@ -23,10 +23,18 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
   const [loadingResults, setLoadingResults] = useState(true)
   const [uploadMsg, setUploadMsg] = useState('')
   const [periodoCounts, setPeriodoCounts] = useState({})
+  const [isEditing, setIsEditing] = useState(false)
+  const [editedResults, setEditedResults] = useState([])
+  const [savingEdit, setSavingEdit] = useState(false)
+  const [selectedRows, setSelectedRows] = useState([])
 
   // Cache to prevent loading spinners when switching back and forth
   const [resultsCache, setResultsCache] = useState({})
 
+  useEffect(() => {
+    setEditedResults(results || [])
+  }, [results])
+  
   // Load persisted results for current periodo
   useEffect(() => {
     // Show cached immediately if we have it
@@ -65,6 +73,82 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
     }
     fetchCounts()
   }, [empresaId, proyectoId, periodos])
+
+  const handleEditToggle = () => {
+  if (isEditing) {
+    setEditedResults(results || [])
+    setSelectedRows([])
+    setIsEditing(false)
+    return
+  }
+  setEditedResults(results || [])
+  setSelectedRows([])
+  setIsEditing(true)
+}
+
+  const handleFieldChange = (index, field, value) => {
+    setEditedResults(current =>
+      current.map((item, i) =>
+        i === index
+          ? {
+              ...item,
+              [field]:
+                field === 'monto' || field === 'cantidad'
+                  ? (value === '' ? null : Number(value))
+                  : value
+            }
+          : item
+      )
+    )
+  }
+
+  const handleSaveEdit = async () => {
+    setSavingEdit(true)
+    try {
+      // esto lo vamos a conectar al back después
+      const updated = await factApi.updateResults(
+        empresaId,
+        proyectoId,
+        activePeriodo,
+        editedResults
+      )
+
+      setResults(updated)
+      setResultsCache(prev => ({ ...prev, [activePeriodo]: updated }))
+      setPeriodoCounts(prev => ({ ...prev, [activePeriodo]: updated?.length || 0 }))
+      setSelectedRows([])
+      setIsEditing(false)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
+  const handleToggleRow = (index) => {
+    setSelectedRows((current) =>
+      current.includes(index)
+        ? current.filter((i) => i !== index)
+        : [...current, index]
+    )
+  }
+
+  const handleToggleAllRows = () => {
+    if (selectedRows.length === editedResults.length) {
+      setSelectedRows([])
+      return
+    }
+    setSelectedRows(editedResults.map((_, index) => index))
+  }
+
+  const handleDeleteSelected = () => {
+    if (!selectedRows.length) return
+
+    setEditedResults((current) =>
+      current.filter((_, index) => !selectedRows.includes(index))
+    )
+    setSelectedRows([])
+  }
 
   const handleUpload = async () => {
     if (!files.length) return
@@ -199,12 +283,71 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
         <div className="bg-card/30 border border-border/50 rounded-xl p-5 shadow-sm">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-5 gap-3">
             <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Resultados</h2>
-            <div className="flex gap-2">
-              <Button onClick={handleAnalyze} disabled={analyzing} variant="secondary" size="sm" className="h-[28px] text-[11px] gap-1.5 bg-background">
+            <div className="flex gap-2 flex-wrap">
+              <Button
+                onClick={handleAnalyze}
+                disabled={analyzing || isEditing}
+                variant="secondary"
+                size="sm"
+                className="h-[28px] text-[11px] gap-1.5 bg-background"
+              >
                 {analyzing ? <Spinner size={12} /> : <FileSearch size={13} />}
                 Analizar factura
               </Button>
-              <Button onClick={handleExport} disabled={exporting || totalFacturas === 0} variant="default" size="sm" className="h-[28px] text-[11px] gap-1.5 bg-success hover:bg-success/90 text-success-foreground">
+
+              {!isEditing ? (
+                <Button
+                  onClick={handleEditToggle}
+                  disabled={loadingResults || !results?.length}
+                  variant="outline"
+                  size="sm"
+                  className="h-[28px] text-[11px] gap-1.5"
+                >
+                  Editar
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    onClick={handleSaveEdit}
+                    disabled={savingEdit}
+                    variant="default"
+                    size="sm"
+                    className="h-[28px] text-[11px] gap-1.5"
+                  >
+                    {savingEdit ? <Spinner size={12} /> : <Check size={13} />}
+                    Ok
+                  </Button>
+
+                  <Button
+                    onClick={handleEditToggle}
+                    disabled={savingEdit}
+                    variant="outline"
+                    size="sm"
+                    className="h-[28px] text-[11px] gap-1.5"
+                  >
+                    Cancelar
+                  </Button>
+                  {isEditing && (
+                    <Button
+                      onClick={handleDeleteSelected}
+                      disabled={!selectedRows.length || savingEdit}
+                      variant="destructive"
+                      size="sm"
+                      className="h-[28px] text-[11px] gap-1.5"
+                    >
+                      Eliminar seleccionadas
+                    </Button>
+                  )}
+                </>
+              )}
+
+              <Button
+                onClick={handleExport}
+                disabled={exporting || totalFacturas === 0 || isEditing}
+                variant="default"
+                size="sm"
+                className="h-[28px] text-[11px] gap-1.5 bg-success hover:bg-success/90 text-success-foreground"
+              >
                 {exporting ? <Spinner size={12} /> : <Download size={13} />}
                 Exportar COMAP
               </Button>
@@ -238,23 +381,137 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                 <div className="border border-border/80 rounded-lg overflow-x-auto shadow-sm">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b border-border/80 bg-muted/40 text-left">
-                        {['Archivo', 'N° Factura', 'Proveedor', 'Fecha', 'Monto', 'Moneda', 'Estado'].map((h) => (
-                          <th key={h} className="text-left px-4 py-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap">{h}</th>
+                      <tr>
+                        {isEditing && (
+                          <th className="px-4 py-3 text-left">
+                            <input
+                              type="checkbox"
+                              checked={editedResults.length > 0 && selectedRows.length === editedResults.length}
+                              onChange={handleToggleAllRows}
+                            />
+                          </th>
+                        )}
+
+                        {['Descripción', 'N° Factura', 'Proveedor', 'Fecha', 'Monto', 'Moneda', 'Categoría', 'Estado'].map((h) => (
+                          <th
+                            key={h}
+                            className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+                          >
+                            {h}
+                          </th>
                         ))}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border/60">
-                      {results.map((r, i) => {
+                      {(isEditing ? editedResults : results).map((r, i) => {
                         const completado = r.proveedor && r.fecha && r.monto
                         return (
                           <tr key={i} className="bg-card hover:bg-accent/40 transition-colors">
-                            <td className="px-4 py-3 text-[12px] max-w-[180px] truncate" title={r.archivo}>{r.archivo}</td>
-                            <td className="px-4 py-3 text-[12px] font-mono text-muted-foreground">{r.numero_factura || '--'}</td>
-                            <td className="px-4 py-3 text-[13px]">{r.proveedor || '--'}</td>
-                            <td className="px-4 py-3 text-[12px] whitespace-nowrap font-mono text-muted-foreground">{r.fecha || '--'}</td>
-                            <td className="px-4 py-3 text-[13px] text-right font-mono tabular-nums">{r.monto != null ? r.monto.toLocaleString() : '--'}</td>
-                            <td className="px-4 py-3 text-[12px] font-mono">{r.moneda || '--'}</td>
+                            {isEditing && (
+                              <td className="px-4 py-3">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedRows.includes(i)}
+                                  onChange={() => handleToggleRow(i)}
+                                />
+                              </td>
+                            )}
+                            <td className="px-4 py-3 text-[12px] max-w-[260px]">
+                              {isEditing ? (
+                                <Input
+                                  value={r.descripcion || ''}
+                                  onChange={(e) => handleFieldChange(i, 'descripcion', e.target.value)}
+                                  className="h-8 text-[12px]"
+                                />
+                              ) : (
+                                <div className="truncate" title={r.descripcion || ''}>
+                                  {r.descripcion || '--'}
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-[12px] font-mono text-muted-foreground">
+                              {isEditing ? (
+                                <Input
+                                  value={r.numero_factura || ''}
+                                  onChange={(e) => handleFieldChange(i, 'numero_factura', e.target.value)}
+                                  className="h-8 text-[12px]"
+                                />
+                              ) : (
+                                r.numero_factura || '--'
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-[13px]">
+                              {isEditing ? (
+                                <Input
+                                  value={r.proveedor || ''}
+                                  onChange={(e) => handleFieldChange(i, 'proveedor', e.target.value)}
+                                  className="h-8 text-[12px]"
+                                />
+                              ) : (
+                                r.proveedor || '--'
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-[12px] whitespace-nowrap font-mono text-muted-foreground">
+                              {isEditing ? (
+                                <Input
+                                  value={r.fecha || ''}
+                                  onChange={(e) => handleFieldChange(i, 'fecha', e.target.value)}
+                                  className="h-8 text-[12px]"
+                                  placeholder="DD/MM/YYYY"
+                                />
+                              ) : (
+                                r.fecha || '--'
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-[13px] text-right font-mono tabular-nums">
+                              {isEditing ? (
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  value={r.monto ?? ''}
+                                  onChange={(e) => handleFieldChange(i, 'monto', e.target.value)}
+                                  className="h-8 text-[12px]"
+                                />
+                              ) : (
+                                r.monto != null ? r.monto.toLocaleString() : '--'
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-[12px] font-mono">
+                              {isEditing ? (
+                                <select
+                                  value={r.moneda || ''}
+                                  onChange={(e) => handleFieldChange(i, 'moneda', e.target.value)}
+                                  className="h-8 rounded-md border border-input bg-background px-2 text-[12px]"
+                                >
+                                  <option value="">--</option>
+                                  <option value="UYU">UYU</option>
+                                  <option value="USD">USD</option>
+                                </select>
+                              ) : (
+                                r.moneda || '--'
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-[12px]">
+                              {isEditing ? (
+                                <select
+                                  value={r.categoria || ''}
+                                  onChange={(e) => handleFieldChange(i, 'categoria', e.target.value)}
+                                  className="h-8 rounded-md border border-input bg-background px-2 text-[12px]"
+                                >
+                                  <option value="">--</option>
+                                  <option value="Maquinaria">Maquinaria</option>
+                                  <option value="Equipos">Equipos</option>
+                                  <option value="Instalaciones">Instalaciones</option>
+                                  <option value="Vehiculos">Vehículos</option>
+                                  <option value="Materiales">Materiales</option>
+                                  <option value="Mano de Obra">Mano de Obra</option>
+                                  <option value="Leyes Sociales">Leyes Sociales</option>
+                                  <option value="Honorarios">Honorarios</option>
+                                </select>
+                              ) : (
+                                r.categoria || '--'
+                              )}
+                            </td>
                             <td className="px-4 py-3">
                               {completado 
                                 ? <Badge variant="secondary" className="bg-success/15 text-success border-transparent hover:bg-success/25 font-medium px-2 h-5">✓ Completo</Badge>

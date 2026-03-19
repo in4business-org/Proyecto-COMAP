@@ -110,9 +110,10 @@ class ExcelService {
     ws.getCell(rowNumber, 11).value = subtotal;
 
     // L = subtotal * $L$33
-    ws.getCell(rowNumber, 12).value = {
-      formula: `K${rowNumber}*$L$33`,
-    };
+    ws.getCell(rowNumber, 12).value = null;
+    // {
+    // formula: `K${rowNumber}*$L$33`,
+    // };
   }
 
   async generarExcelComap(facturas, rutaSalida, opciones = {}) {
