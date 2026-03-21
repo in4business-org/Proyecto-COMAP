@@ -69,14 +69,17 @@ Reglas de serie_numero_factura:
 Además, devolvé un campo "categoria" para cada item.
 
 La categoría debe ser una de estas opciones exactas:
-- Maquinaria
-- Equipos
-- Instalaciones
-- Vehiculos
-- Materiales
-- Mano de Obra
-- Leyes Sociales
-- Honorarios
+- 'Maquinaria',
+- 'Equipos',
+- 'Instalaciones',
+- 'Vehiculos',
+- 'MEIV/Imprevistos',
+- 'Materiales',
+- 'Mano de Obra Directa',
+- 'Mano de Obra Indirecta',
+- 'Leyes Sociales',
+- 'Honorarios',
+- 'OC/Imprevistos',
 
 Reglas para categoria:
 - Elegí la categoría más probable según la descripción del item y el contexto de la factura.
