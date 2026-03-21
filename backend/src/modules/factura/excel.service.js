@@ -113,10 +113,10 @@ class ExcelService {
     // L = subtotal
     ws.getCell(rowNumber, 12).value = subtotal;
 
-    // M = formula: L * $B$5
+    // M = formula: L * $C$5
     ws.getCell(rowNumber, 13).value =
     {
-      formula: `L${rowNumber}*$B$5`,
+      formula: `L${rowNumber}*$C$5`,
     };
   }
 
