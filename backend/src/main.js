@@ -21,12 +21,14 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+const requireAuth = require('./middleware/auth.middleware');
+
 // ── API Routes ─────────────────────────────────────────────
-app.use('/api/empresas', empresaRoutes);
-app.use('/api/empresas/:empresaId/proyectos', proyectoRoutes);
-app.use('/api', facturaRoutes);
-app.use('/api/empresas/:empresaId/proyectos/:proyectoId/checklist', checklistRoutes);
-app.use('/api/empresas/:empresaId/proyectos/:proyectoId/simulador', simuladorRoutes);
+app.use('/api/empresas', requireAuth, empresaRoutes);
+app.use('/api/empresas/:empresaId/proyectos', requireAuth, proyectoRoutes);
+app.use('/api', requireAuth, facturaRoutes);
+app.use('/api/empresas/:empresaId/proyectos/:proyectoId/checklist', requireAuth, checklistRoutes);
+app.use('/api/empresas/:empresaId/proyectos/:proyectoId/simulador', requireAuth, simuladorRoutes);
 
 // ── Health check ───────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
