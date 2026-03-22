@@ -2,43 +2,87 @@ const fs = require('fs');
 const path = require('path');
 const { PROYECTOS_DIR } = require('../../config/storage.config');
 const { CHECKLIST_PRESENTACION } = require('../../common/constants/checklist-items');
+const prisma = require('../../config/prisma');
 
 class ChecklistService {
-  getChecklist(empresaId, proyectoId) {
-    const checkPath = path.join(PROYECTOS_DIR, empresaId, proyectoId, 'presentacion', 'checklist.json');
-    if (!fs.existsSync(checkPath)) return [];
-    const estados = JSON.parse(fs.readFileSync(checkPath, 'utf-8'));
+  async getChecklist(empresaId, proyectoId) {
+    const items = await prisma.checklistItem.findMany({
+        where: { proyectoId, periodo: 'presentacion' }
+    });
+    const estados = {};
+    for (const item of items) {
+        estados[item.item_id] = item;
+    }
+    
     return CHECKLIST_PRESENTACION.map(item => ({
       ...item,
-      ...(estados[item.id] || { estado: 'pendiente', archivo: null, nota_usuario: '' }),
+      estado: estados[item.id]?.estado || 'pendiente',
+      archivo: estados[item.id]?.archivo || null,
+      nota_usuario: estados[item.id]?.nota_usuario || ''
     }));
   }
 
-  actualizarItem(empresaId, proyectoId, itemId, estado, notaUsuario = '') {
-    const checkPath = this._getPath(empresaId, proyectoId);
-    if (!fs.existsSync(checkPath)) return false;
-    const checklist = JSON.parse(fs.readFileSync(checkPath, 'utf-8'));
-    if (!checklist[itemId]) checklist[itemId] = {};
-    checklist[itemId].estado = estado;
-    checklist[itemId].nota_usuario = notaUsuario;
-    fs.writeFileSync(checkPath, JSON.stringify(checklist, null, 2), 'utf-8');
-    return true;
+  async actualizarItem(empresaId, proyectoId, itemId, estado, notaUsuario = '') {
+    try {
+        await prisma.checklistItem.upsert({
+            where: {
+                proyectoId_periodo_item_id: {
+                    proyectoId,
+                    periodo: 'presentacion',
+                    item_id: itemId
+                }
+            },
+            update: { estado, nota_usuario: notaUsuario },
+            create: {
+                proyectoId,
+                periodo: 'presentacion',
+                item_id: itemId,
+                estado,
+                nota_usuario: notaUsuario
+            }
+        });
+        return true;
+    } catch(e) {
+        return false;
+    }
   }
 
-  guardarArchivo(empresaId, proyectoId, itemId, filename) {
-    const checkPath = this._getPath(empresaId, proyectoId);
-    if (!fs.existsSync(checkPath)) return false;
-    const checklist = JSON.parse(fs.readFileSync(checkPath, 'utf-8'));
-    if (!checklist[itemId]) checklist[itemId] = {};
-    checklist[itemId].archivo = filename;
-    checklist[itemId].estado = 'completado';
-    fs.writeFileSync(checkPath, JSON.stringify(checklist, null, 2), 'utf-8');
-    return true;
+  async guardarArchivo(empresaId, proyectoId, itemId, filename) {
+    try {
+        await prisma.checklistItem.upsert({
+            where: {
+                proyectoId_periodo_item_id: {
+                    proyectoId,
+                    periodo: 'presentacion',
+                    item_id: itemId
+                }
+            },
+            update: { archivo: filename, estado: 'completado' },
+            create: {
+                proyectoId,
+                periodo: 'presentacion',
+                item_id: itemId,
+                archivo: filename,
+                estado: 'completado'
+            }
+        });
+        return true;
+    } catch(e) {
+        return false;
+    }
   }
 
-  getArchivoPath(empresaId, proyectoId, itemId) {
-    const checklist = this.getChecklist(empresaId, proyectoId);
-    const item = checklist.find(i => i.id === itemId);
+  async getArchivoPath(empresaId, proyectoId, itemId) {
+    const item = await prisma.checklistItem.findUnique({
+        where: {
+            proyectoId_periodo_item_id: {
+                proyectoId,
+                periodo: 'presentacion',
+                item_id: itemId
+            }
+        }
+    });
+
     if (!item || !item.archivo) return null;
     const carpeta = path.join(PROYECTOS_DIR, empresaId, proyectoId, 'presentacion', 'documentos');
     const ruta = path.join(carpeta, item.archivo);
@@ -53,10 +97,6 @@ class ChecklistService {
     const nombreCarpeta = `${itemId} ${descripcionCorta}`;
     const carpetaBase = path.join(PROYECTOS_DIR, empresaId, proyectoId, 'presentacion', 'documentos');
     return { carpetaBase, seccion, nombreCarpeta };
-  }
-
-  _getPath(empresaId, proyectoId) {
-    return path.join(PROYECTOS_DIR, empresaId, proyectoId, 'presentacion', 'checklist.json');
   }
 }
 

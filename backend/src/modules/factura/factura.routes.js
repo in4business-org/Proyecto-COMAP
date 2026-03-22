@@ -7,6 +7,7 @@ const excelService = require('./excel.service');
 const proyectoService = require('../proyecto/proyecto.service');
 const empresaService = require('../empresa/empresa.service');
 const { UPLOADS_DIR, OUTPUTS_DIR } = require('../../config/storage.config');
+const prisma = require('../../config/prisma');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
 const router = Router({ mergeParams: true });
@@ -16,25 +17,40 @@ function isSupported(filename) {
   return SUPPORTED_EXTENSIONS.includes(path.extname(filename).toLowerCase());
 }
 
-/** Path to the persisted results JSON for a project+periodo */
-function resultadosPath(empresaId, proyectoId, periodo) {
-  const carpeta = proyectoService.getRutaFacturas(empresaId, proyectoId, periodo);
-  return path.join(carpeta, '_resultados.json');
+/** Save results to database */
+async function guardarResultadosDB(proyectoId, periodo, resultados) {
+  await prisma.factura.deleteMany({
+    where: { proyectoId, periodo }
+  });
+  
+  if (resultados && resultados.length > 0) {
+    const dataToInsert = resultados.map(r => ({
+      proyectoId,
+      periodo,
+      archivo: r.archivo || null,
+      descripcion: r.descripcion || null,
+      numero_factura: r.numero_factura || null,
+      proveedor: r.proveedor || null,
+      rut: r.rut || null,
+      fecha: r.fecha || null,
+      monto: r.monto ? parseFloat(r.monto) : null,
+      moneda: r.moneda || null,
+      cantidad: r.cantidad ? parseInt(r.cantidad) : 1,
+      categoria: r.categoria || null,
+      rut_receptor: r.rut_receptor || null,
+      razon_social_receptor: r.razon_social_receptor || null,
+      texto_extraido: Boolean(r.texto_extraido)
+    }));
+    await prisma.factura.createMany({ data: dataToInsert });
+  }
 }
 
-/** Read persisted results, or null if none */
-function leerResultados(empresaId, proyectoId, periodo) {
-  const ruta = resultadosPath(empresaId, proyectoId, periodo);
-  if (!fs.existsSync(ruta)) return null;
-  try { return JSON.parse(fs.readFileSync(ruta, 'utf-8')); }
-  catch { return null; }
-}
-
-/** Save results to disk */
-function guardarResultados(empresaId, proyectoId, periodo, resultados) {
-  const ruta = resultadosPath(empresaId, proyectoId, periodo);
-  fs.mkdirSync(path.dirname(ruta), { recursive: true });
-  fs.writeFileSync(ruta, JSON.stringify(resultados, null, 2), 'utf-8');
+/** Read persisted results from db */
+async function leerResultadosDB(proyectoId, periodo) {
+  return prisma.factura.findMany({
+    where: { proyectoId, periodo },
+    orderBy: { createdAt: 'asc' }
+  });
 }
 
 // ── Project-scoped invoice endpoints ─────────────────────
@@ -54,26 +70,29 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/upload', upload
   res.json({ subidos, total: subidos.length });
 });
 
-// GET  retrieve persisted results (no re-analysis)
-router.get('/empresas/:empresaId/proyectos/:proyectoId/:periodo/resultados', (req, res) => {
-  const { empresaId, proyectoId, periodo } = req.params;
-  const data = leerResultados(empresaId, proyectoId, periodo);
-  res.json(data || []);
+// GET  retrieve persisted results
+router.get('/empresas/:empresaId/proyectos/:proyectoId/:periodo/resultados', async (req, res) => {
+  try {
+    const { proyectoId, periodo } = req.params;
+    const data = await leerResultadosDB(proyectoId, periodo);
+    res.json(data || []);
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // PUT  update persisted results
-router.put('/empresas/:empresaId/proyectos/:proyectoId/:periodo', (req, res) => {
+router.put('/empresas/:empresaId/proyectos/:proyectoId/:periodo', async (req, res) => {
   try {
-    const { empresaId, proyectoId, periodo } = req.params;
+    const { proyectoId, periodo } = req.params;
     const { results } = req.body;
 
     if (!Array.isArray(results)) {
       return res.status(400).json({ error: 'results debe ser un array' });
     }
 
-    guardarResultados(empresaId, proyectoId, periodo, results);
-    const updated = leerResultados(empresaId, proyectoId, periodo) || [];
-
+    await guardarResultadosDB(proyectoId, periodo, results);
+    const updated = await leerResultadosDB(proyectoId, periodo);
     res.json(updated);
   } catch (e) {
     console.error(e);
@@ -87,33 +106,33 @@ router.get('/empresas/:empresaId/proyectos/:proyectoId/:periodo/analizar', async
     const { empresaId, proyectoId, periodo } = req.params;
     const carpeta = proyectoService.getRutaFacturas(empresaId, proyectoId, periodo);
     const resultados = await facturaService.analizarFacturas(carpeta);
-    // Persist
-    guardarResultados(empresaId, proyectoId, periodo, resultados);
-    res.json(resultados);
+    
+    await guardarResultadosDB(proyectoId, periodo, resultados);
+    res.json(await leerResultadosDB(proyectoId, periodo));
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message });
   }
 });
 
-// POST  export Excel (use saved results if available, otherwise analyze)
+// POST  export Excel
 router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/excel', async (req, res) => {
   try {
     const { empresaId, proyectoId, periodo } = req.params;
 
-    // Use cached results first, fall back to re-analysis
-    let resultados = leerResultados(empresaId, proyectoId, periodo);
+    let resultados = await leerResultadosDB(proyectoId, periodo);
     if (!resultados || !resultados.length) {
       const carpeta = proyectoService.getRutaFacturas(empresaId, proyectoId, periodo);
-      resultados = await facturaService.analizarFacturas(carpeta);
-      guardarResultados(empresaId, proyectoId, periodo, resultados);
+      const parsedStats = await facturaService.analizarFacturas(carpeta);
+      await guardarResultadosDB(proyectoId, periodo, parsedStats);
+      resultados = await leerResultadosDB(proyectoId, periodo);
     }
     if (!resultados.length) return res.status(404).json({ error: 'No hay facturas procesadas' });
 
-    const meta = proyectoService.getMetadata(empresaId, proyectoId) || {};
+    const meta = await proyectoService.getMetadata(empresaId, proyectoId) || {};
     let fechaBalance = null;
     try {
-      const info = empresaService.getById(empresaId);
+      const info = await empresaService.getById(empresaId);
       fechaBalance = info ? info.fecha_balance : null;
     } catch { }
 
@@ -215,7 +234,6 @@ router.post('/simple/asociar', async (req, res) => {
     const carpetaDestino = proyectoService.getRutaFacturas(empresaId, proyectoId, periodo);
     fs.mkdirSync(carpetaDestino, { recursive: true });
 
-    // Copiar archivos físicos
     let copiados = 0;
     for (const r of resultadosSimples) {
       if (r.archivo) {
@@ -228,18 +246,16 @@ router.post('/simple/asociar', async (req, res) => {
       }
     }
 
-    // Unir resultados lógicos (append y reemplazar duplicados de archivo)
-    let resultadosDestino = leerResultados(empresaId, proyectoId, periodo) || [];
+    let resultadosDestino = await leerResultadosDB(proyectoId, periodo) || [];
     const destinoMap = new Map(resultadosDestino.map(r => [r.archivo, r]));
 
     for (const r of resultadosSimples) {
       destinoMap.set(r.archivo, r);
     }
 
-    resultadosDestino = Array.from(destinoMap.values());
-    guardarResultados(empresaId, proyectoId, periodo, resultadosDestino);
+    const combinedResults = Array.from(destinoMap.values());
+    await guardarResultadosDB(proyectoId, periodo, combinedResults);
 
-    // Limpiar el modo simple para que quede vacío después de asociar
     try { fs.unlinkSync(SIMPLE_RESULTS_PATH); } catch (e) { }
 
     res.json({ success: true, asociados: resultadosSimples.length, archivos_copiados: copiados });

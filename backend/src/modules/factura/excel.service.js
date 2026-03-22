@@ -4,14 +4,17 @@ const { TEMPLATE_CUADRO } = require('../../config/storage.config');
 const { normalizarMonto, normalizarFecha } = require('../../common/utils/normalize');
 
 const CATEGORY_CONFIG = {
-  'Honorarios': { order: 8, insertRow: 25 },
-  'Leyes Sociales': { order: 7, insertRow: 24 },
-  'Mano de Obra': { order: 6, insertRow: 23 },
-  'Materiales': { order: 5, insertRow: 22 },
-  'Vehiculos': { order: 4, insertRow: 16 },
-  'Instalaciones': { order: 3, insertRow: 15 },
-  'Equipos': { order: 2, insertRow: 14 },
-  'Maquinaria': { order: 1, insertRow: 13 },
+  'OC/Imprevistos': { order: 11, insertRow: 40 },
+  'Honorarios': { order: 10, insertRow: 38 },
+  'Leyes Sociales': { order: 9, insertRow: 36 },
+  'Mano de Obra Indirecta': { order: 8, insertRow: 34 },
+  'Mano de Obra Directa': { order: 7, insertRow: 32 },
+  'Materiales': { order: 6, insertRow: 30 },
+  'MEIV/Imprevistos': { order: 5, insertRow: 25 },
+  'Vehiculos': { order: 4, insertRow: 23 },
+  'Instalaciones': { order: 3, insertRow: 21 },
+  'Equipos': { order: 2, insertRow: 19 },
+  'Maquinaria': { order: 1, insertRow: 17 },
 };
 
 class ExcelService {
@@ -31,9 +34,7 @@ class ExcelService {
         return bOrder - aOrder;
       }
 
-      const aValor = Number(a.valor ?? 0);
-      const bValor = Number(b.valor ?? 0);
-      return aValor - bValor;
+      return;
     });
   }
 
@@ -92,28 +93,31 @@ class ExcelService {
     ws.getCell(rowNumber, 5).value = fecha;
 
     // F = "Plaza"
-    ws.getCell(rowNumber, 6).value = 'Plaza';
+    ws.getCell(rowNumber, 6).value = 'PG';
 
-    // G = "N"
-    ws.getCell(rowNumber, 7).value = 'N';
+    // G = nada
+    ws.getCell(rowNumber, 7).value = null;
 
-    // H = cantidad
-    ws.getCell(rowNumber, 8).value = cantidad;
+    // H = "N"
+    ws.getCell(rowNumber, 8).value = 'N';
 
-    // I = proveedor
-    ws.getCell(rowNumber, 9).value = proveedor;
+    // I = cantidad
+    ws.getCell(rowNumber, 9).value = cantidad;
 
-    // J = moneda
-    ws.getCell(rowNumber, 10).value = moneda;
+    // J = proveedor
+    ws.getCell(rowNumber, 10).value = proveedor;
 
-    // K = subtotal
-    ws.getCell(rowNumber, 11).value = subtotal;
+    // K = moneda
+    ws.getCell(rowNumber, 11).value = moneda;
 
-    // L = subtotal * $L$33
-    ws.getCell(rowNumber, 12).value = null;
-    // {
-    // formula: `K${rowNumber}*$L$33`,
-    // };
+    // L = subtotal
+    ws.getCell(rowNumber, 12).value = subtotal;
+
+    // M = formula: L * $C$5
+    ws.getCell(rowNumber, 13).value =
+    {
+      formula: `L${rowNumber}*$C$5`,
+    };
   }
 
   async generarExcelComap(facturas, rutaSalida, opciones = {}) {

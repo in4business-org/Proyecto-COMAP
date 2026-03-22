@@ -503,10 +503,13 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                                   <option value="Equipos">Equipos</option>
                                   <option value="Instalaciones">Instalaciones</option>
                                   <option value="Vehiculos">Vehículos</option>
+                                  <option value="MEIV/Imprevistos">MEIV/Imprevistos</option>
                                   <option value="Materiales">Materiales</option>
-                                  <option value="Mano de Obra">Mano de Obra</option>
+                                  <option value="Mano de Obra Directa">Mano de Obra Directa</option>
+                                  <option value="Mano de Obra Indirecta">Mano de Obra Indirecta</option>
                                   <option value="Leyes Sociales">Leyes Sociales</option>
                                   <option value="Honorarios">Honorarios</option>
+                                  <option value="OC/Imprevistos">OC/Imprevistos</option>
                                 </select>
                               ) : (
                                 r.categoria || '--'

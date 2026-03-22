@@ -7,10 +7,13 @@ const INVOICE_CATEGORIES_SCHEMA = [
   'Equipos',
   'Instalaciones',
   'Vehiculos',
+  'MEIV/Imprevistos',
   'Materiales',
-  'Mano de Obra',
+  'Mano de Obra Directa',
+  'Mano de Obra Indirecta',
   'Leyes Sociales',
   'Honorarios',
+  'OC/Imprevistos',
 ];
 
 const INVOICE_ITEM_SCHEMA = {

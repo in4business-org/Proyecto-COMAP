@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@google/genai": "^1.45.0",
+    "@prisma/client": "^5.22.0",
     "cors": "^2.8.5",
     "dotenv": "^17.3.1",
     "exceljs": "^4.4.0",
@@ -17,6 +18,7 @@
     "uuid": "^13.0.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.9"
+    "nodemon": "^3.1.9",
+    "prisma": "^5.22.0"
   }
 }
