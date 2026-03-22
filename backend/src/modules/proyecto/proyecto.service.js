@@ -10,27 +10,9 @@ class ProyectoService {
     const fechaHoy = new Date().toISOString().split('T')[0];
     const proyectoId = `${fechaHoy}_${crypto.randomUUID().substring(0, 6)}`;
     
-    // Create physical folders
-    const rutaProyecto = path.join(PROYECTOS_DIR, empresaId, proyectoId);
-    
     const periodos = ['presentacion'];
     for (let i = 1; i <= duracionSeguimiento; i++) {
         periodos.push(`control_${anioPresentacion + i}`);
-    }
-    
-    for (const periodo of periodos) {
-        fs.mkdirSync(path.join(rutaProyecto, periodo, 'facturas'), { recursive: true });
-        fs.mkdirSync(path.join(rutaProyecto, periodo, 'archivos_comap'), { recursive: true });
-        fs.mkdirSync(path.join(rutaProyecto, periodo, 'documentos'), { recursive: true });
-    }
-
-    if (fs.existsSync(TEMPLATES_DIR)) {
-        for (const periodo of periodos) {
-            const destino = path.join(rutaProyecto, periodo, 'archivos_comap');
-            for (const archivo of fs.readdirSync(TEMPLATES_DIR)) {
-                fs.copyFileSync(path.join(TEMPLATES_DIR, archivo), path.join(destino, archivo));
-            }
-        }
     }
 
     // Prepare checklist models
@@ -126,13 +108,6 @@ class ProyectoService {
     };
   }
 
-  getRutaFacturas(empresaId, proyectoId, periodo) {
-    return path.join(PROYECTOS_DIR, empresaId, proyectoId, periodo, 'facturas');
-  }
-
-  getRutaDocumentos(empresaId, proyectoId, periodo) {
-    return path.join(PROYECTOS_DIR, empresaId, proyectoId, periodo, 'documentos');
-  }
 }
 
 module.exports = new ProyectoService();

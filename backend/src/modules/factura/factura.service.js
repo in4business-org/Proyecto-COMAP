@@ -46,11 +46,8 @@ class FacturaService {
    * Analyze a single invoice file (PDF or image).
    * Returns an array of line-item objects in legacy format.
    */
-  async analizarFactura(ruta) {
-    const archivo = path.basename(ruta);
+  async analizarBuffer(fileBuffer, mimeType, archivo) {
     try {
-      const fileBuffer = fs.readFileSync(ruta);
-      const mimeType = getMimeType(ruta);
       const items = await parseInvoice({ fileBuffer, mimeType });
       return items.map(item => mapGeminiItemToLegacy(item, archivo));
     } catch (error) {
@@ -69,17 +66,13 @@ class FacturaService {
   }
 
   /**
-   * Analyze all supported files in a folder.
-   * Returns a flat array of all line-items across all invoices.
+   * Analyze multiple files from memory buffers
+   * @param {Array<{buffer: Buffer, mimeType: string, filename: string}>} archivosData 
    */
-  async analizarFacturas(carpeta) {
-    if (!fs.existsSync(carpeta)) return [];
-    const archivos = fs.readdirSync(carpeta)
-      .filter(f => SUPPORTED_EXTENSIONS.includes(path.extname(f).toLowerCase()))
-      .sort();
+  async analizarMultipleArchivos(archivosData) {
     const resultados = [];
-    for (const archivo of archivos) {
-      const items = await this.analizarFactura(path.join(carpeta, archivo));
+    for (const data of archivosData) {
+      const items = await this.analizarBuffer(data.buffer, data.mimeType, data.filename);
       resultados.push(...items);
     }
     return resultados;

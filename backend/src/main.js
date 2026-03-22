@@ -34,49 +34,17 @@ app.get('/api/health', (_req, res) => {
 });
 
 // ── Stats ──────────────────────────────────────────────────
-const fs = require('fs');
-const { PROYECTOS_DIR } = require('./config/storage.config');
+const prisma = require('./config/prisma');
 
-app.get('/api/stats', (_req, res) => {
-  let empresasCount = 0;
-  let proyectosCount = 0;
-  let facturasCount = 0;
-
-  if (fs.existsSync(PROYECTOS_DIR)) {
-    const empresas = fs.readdirSync(PROYECTOS_DIR).filter(d =>
-      fs.statSync(path.join(PROYECTOS_DIR, d)).isDirectory() &&
-      fs.existsSync(path.join(PROYECTOS_DIR, d, 'info.json'))
-    );
-    empresasCount = empresas.length;
-
-    for (const emp of empresas) {
-      const empDir = path.join(PROYECTOS_DIR, emp);
-      const proyectos = fs.readdirSync(empDir).filter(d =>
-        fs.statSync(path.join(empDir, d)).isDirectory() &&
-        fs.existsSync(path.join(empDir, d, 'metadata.json'))
-      );
-      proyectosCount += proyectos.length;
-
-      // Count invoice items from persisted results
-      for (const proj of proyectos) {
-        const projDir = path.join(empDir, proj);
-        const periodos = fs.readdirSync(projDir).filter(d =>
-          fs.statSync(path.join(projDir, d)).isDirectory()
-        );
-        for (const periodo of periodos) {
-          const resPath = path.join(projDir, periodo, 'facturas', '_resultados.json');
-          if (fs.existsSync(resPath)) {
-            try {
-              const data = JSON.parse(fs.readFileSync(resPath, 'utf-8'));
-              facturasCount += Array.isArray(data) ? data.length : 0;
-            } catch {}
-          }
-        }
-      }
-    }
+app.get('/api/stats', async (_req, res) => {
+  try {
+    const empresas = await prisma.empresa.count();
+    const proyectos = await prisma.proyecto.count();
+    const facturas = await prisma.factura.count({ where: { texto_extraido: true }});
+    res.json({ empresas, proyectos, facturas });
+  } catch (e) {
+    res.json({ empresas: 0, proyectos: 0, facturas: 0 });
   }
-
-  res.json({ empresas: empresasCount, proyectos: proyectosCount, facturas: facturasCount });
 });
 
 // ── Start server ───────────────────────────────────────────
