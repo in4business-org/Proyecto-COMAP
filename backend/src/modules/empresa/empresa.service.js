@@ -1,6 +1,3 @@
-const fs = require('fs');
-const path = require('path');
-const { PROYECTOS_DIR } = require('../../config/storage.config');
 const prisma = require('../../config/prisma');
 
 const CAMPOS_EMPRESA = [
@@ -11,10 +8,6 @@ const CAMPOS_EMPRESA = [
 class EmpresaService {
   async crear(rut, nombre) {
     const empresaId = `${rut}_${nombre.replace(/\s+/g, '_')}`;
-    
-    // Keep directory creation for compatibility with files
-    const dir = path.join(PROYECTOS_DIR, empresaId);
-    fs.mkdirSync(dir, { recursive: true });
 
     await prisma.empresa.upsert({
       where: { rut },
