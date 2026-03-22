@@ -1,0 +1,80 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Empresa {
+  id                    String     @id @default(uuid())
+  rut                   String     @unique
+  nombre                String
+  razon_social          String?
+  domicilio_constituido String?
+  domicilio_fiscal      String?
+  telefono              String?
+  email                 String?
+  giro                  String?
+  codigo_ciiu           String?
+  fecha_balance         String?
+  tipo_contribuyente    String?
+  proyectos             Proyecto[]
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
+}
+
+model Proyecto {
+  id                   String     @id @default(uuid())
+  empresaId            String
+  empresa              Empresa    @relation(fields: [empresaId], references: [id])
+  fecha_creacion       String
+  fecha_presentacion   String?
+  anio_presentacion    Int?
+  duracion_seguimiento Int?
+  cotizacion_ui        Float?
+  cotizacion_usd       Float?
+  expediente           String?
+  checklists           ChecklistItem[]
+  facturas             Factura[]
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+}
+
+model ChecklistItem {
+  id           String     @id @default(uuid())
+  proyectoId   String
+  proyecto     Proyecto   @relation(fields: [proyectoId], references: [id])
+  periodo      String
+  item_id      String
+  estado       String     @default("pendiente")
+  archivo      String?
+  nota_usuario String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([proyectoId, periodo, item_id])
+}
+
+model Factura {
+  id                    String    @id @default(uuid())
+  proyectoId            String?
+  proyecto              Proyecto? @relation(fields: [proyectoId], references: [id])
+  periodo               String?
+  archivo               String?
+  descripcion           String?
+  numero_factura        String?
+  proveedor             String?
+  rut                   String?
+  fecha                 String?
+  monto                 Float?
+  moneda                String?
+  cantidad              Int?      @default(1)
+  categoria             String?
+  rut_receptor          String?
+  razon_social_receptor String?
+  texto_extraido        Boolean   @default(false)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+}
