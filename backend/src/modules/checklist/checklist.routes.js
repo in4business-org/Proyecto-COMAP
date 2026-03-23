@@ -3,6 +3,7 @@ const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
 const checklistService = require('./checklist.service');
+const supabaseService = require('../../config/supabase.config');
 
 const upload = multer({ storage: multer.memoryStorage() });
 const router = Router({ mergeParams: true });
@@ -36,16 +37,15 @@ router.patch('/:itemId', async (req, res) => {
 router.post('/:itemId/archivo', upload.single('file'), async (req, res) => {
   try {
     const { empresaId, proyectoId, itemId } = req.params;
-    const { carpetaBase, seccion, nombreCarpeta } = checklistService.getUploadPath(
+    const { seccion, nombreCarpeta } = checklistService.getUploadPath(
       empresaId, proyectoId, itemId,
     );
-    const carpeta = path.join(carpetaBase, seccion, nombreCarpeta);
-    fs.mkdirSync(carpeta, { recursive: true });
-    fs.writeFileSync(path.join(carpeta, req.file.originalname), req.file.buffer);
-    const rutaRelativa = path.join(seccion, nombreCarpeta, req.file.originalname);
+    const folderPath = `proyectos/${empresaId}/${proyectoId}/checklist/${seccion}/${nombreCarpeta}`;
+    const filePath = `${folderPath}/${req.file.originalname}`;
     
-    await checklistService.guardarArchivo(empresaId, proyectoId, itemId, rutaRelativa);
-    res.json({ ok: true, archivo: rutaRelativa });
+    await supabaseService.uploadFile(filePath, req.file.buffer, req.file.mimetype);
+    await checklistService.guardarArchivo(empresaId, proyectoId, itemId, filePath);
+    res.json({ ok: true, archivo: filePath });
   } catch(e) {
     res.status(500).json({ error: e.message });
   }
@@ -55,9 +55,16 @@ router.post('/:itemId/archivo', upload.single('file'), async (req, res) => {
 router.get('/:itemId/archivo', async (req, res) => {
   try {
     const { empresaId, proyectoId, itemId } = req.params;
-    const result = await checklistService.getArchivoPath(empresaId, proyectoId, itemId);
-    if (!result) return res.status(404).json({ error: 'Archivo no encontrado' });
-    res.download(result.ruta, result.nombre);
+    const filePath = await checklistService.getArchivoPath(empresaId, proyectoId, itemId);
+    if (!filePath) return res.status(404).json({ error: 'Archivo no encontrado' });
+    
+    const buffer = await supabaseService.downloadFile(filePath);
+    const filename = filePath.split('/').pop();
+    res.set({
+      'Content-Type': 'application/octet-stream',
+      'Content-Disposition': `attachment; filename="${filename}"`
+    });
+    res.send(buffer);
   } catch(e) {
     res.status(500).json({ error: e.message });
   }

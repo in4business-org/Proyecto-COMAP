@@ -84,10 +84,7 @@ class ChecklistService {
     });
 
     if (!item || !item.archivo) return null;
-    const carpeta = path.join(PROYECTOS_DIR, empresaId, proyectoId, 'presentacion', 'documentos');
-    const ruta = path.join(carpeta, item.archivo);
-    if (!fs.existsSync(ruta)) return null;
-    return { ruta, nombre: path.basename(item.archivo) };
+    return item.archivo;
   }
 
   getUploadPath(empresaId, proyectoId, itemId) {
@@ -95,8 +92,7 @@ class ChecklistService {
     const seccion = itemDef ? itemDef.seccion : 'otros';
     const descripcionCorta = itemDef ? itemDef.descripcion.substring(0, 60).trimEnd() : itemId;
     const nombreCarpeta = `${itemId} ${descripcionCorta}`;
-    const carpetaBase = path.join(PROYECTOS_DIR, empresaId, proyectoId, 'presentacion', 'documentos');
-    return { carpetaBase, seccion, nombreCarpeta };
+    return { seccion, nombreCarpeta };
   }
 }
 

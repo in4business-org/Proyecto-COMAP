@@ -2,19 +2,30 @@ const { Router } = require('express');
 const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const facturaService = require('./factura.service');
 const excelService = require('./excel.service');
 const proyectoService = require('../proyecto/proyecto.service');
 const empresaService = require('../empresa/empresa.service');
-const { UPLOADS_DIR, OUTPUTS_DIR } = require('../../config/storage.config');
+const supabaseService = require('../../config/supabase.config');
 const prisma = require('../../config/prisma');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
 const router = Router({ mergeParams: true });
+const TMP_DIR = os.tmpdir();
 
 const SUPPORTED_EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg', '.webp'];
 function isSupported(filename) {
   return SUPPORTED_EXTENSIONS.includes(path.extname(filename).toLowerCase());
+}
+
+function getMimeType(filename) {
+  const ext = path.extname(filename).toLowerCase();
+  const mimeMap = {
+    '.pdf': 'application/pdf', '.png': 'image/png', '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg', '.webp': 'image/webp',
+  };
+  return mimeMap[ext] || 'application/pdf';
 }
 
 /** Save results to database */
@@ -56,18 +67,22 @@ async function leerResultadosDB(proyectoId, periodo) {
 // ── Project-scoped invoice endpoints ─────────────────────
 
 // POST  upload files
-router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/upload', upload.array('files'), (req, res) => {
-  const { empresaId, proyectoId, periodo } = req.params;
-  const carpeta = proyectoService.getRutaFacturas(empresaId, proyectoId, periodo);
-  fs.mkdirSync(carpeta, { recursive: true });
-  const subidos = [];
-  for (const file of (req.files || [])) {
-    if (isSupported(file.originalname)) {
-      fs.writeFileSync(path.join(carpeta, file.originalname), file.buffer);
-      subidos.push(file.originalname);
+router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/upload', upload.array('files'), async (req, res) => {
+  try {
+    const { empresaId, proyectoId, periodo } = req.params;
+    const folderPath = `proyectos/${empresaId}/${proyectoId}/${periodo}`;
+    const subidos = [];
+    for (const file of (req.files || [])) {
+      if (isSupported(file.originalname)) {
+        await supabaseService.uploadFile(`${folderPath}/${file.originalname}`, file.buffer, file.mimetype);
+        subidos.push(file.originalname);
+      }
     }
+    res.json({ subidos, total: subidos.length });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
   }
-  res.json({ subidos, total: subidos.length });
 });
 
 // GET  retrieve persisted results
@@ -104,9 +119,19 @@ router.put('/empresas/:empresaId/proyectos/:proyectoId/:periodo', async (req, re
 router.get('/empresas/:empresaId/proyectos/:proyectoId/:periodo/analizar', async (req, res) => {
   try {
     const { empresaId, proyectoId, periodo } = req.params;
-    const carpeta = proyectoService.getRutaFacturas(empresaId, proyectoId, periodo);
-    const resultados = await facturaService.analizarFacturas(carpeta);
+    const folderPath = `proyectos/${empresaId}/${proyectoId}/${periodo}`;
     
+    const fileList = await supabaseService.listFiles(folderPath);
+    if (!fileList || !fileList.length) return res.json(await leerResultadosDB(proyectoId, periodo));
+
+    const archivosData = [];
+    for (const f of fileList) {
+        if (!isSupported(f.name)) continue;
+        const buffer = await supabaseService.downloadFile(`${folderPath}/${f.name}`);
+        archivosData.push({ buffer, mimeType: getMimeType(f.name), filename: f.name });
+    }
+    
+    const resultados = await facturaService.analizarMultipleArchivos(archivosData);
     await guardarResultadosDB(proyectoId, periodo, resultados);
     res.json(await leerResultadosDB(proyectoId, periodo));
   } catch (e) {
@@ -122,8 +147,15 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/excel', async (
 
     let resultados = await leerResultadosDB(proyectoId, periodo);
     if (!resultados || !resultados.length) {
-      const carpeta = proyectoService.getRutaFacturas(empresaId, proyectoId, periodo);
-      const parsedStats = await facturaService.analizarFacturas(carpeta);
+      const folderPath = `proyectos/${empresaId}/${proyectoId}/${periodo}`;
+      const fileList = await supabaseService.listFiles(folderPath);
+      const archivosData = [];
+      for (const f of (fileList || [])) {
+          if (!isSupported(f.name)) continue;
+          const buffer = await supabaseService.downloadFile(`${folderPath}/${f.name}`);
+          archivosData.push({ buffer, mimeType: getMimeType(f.name), filename: f.name });
+      }
+      const parsedStats = await facturaService.analizarMultipleArchivos(archivosData);
       await guardarResultadosDB(proyectoId, periodo, parsedStats);
       resultados = await leerResultadosDB(proyectoId, periodo);
     }
@@ -138,8 +170,7 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/excel', async (
 
     const timestamp = new Date().toISOString().replace(/[-:T]/g, '').substring(0, 15);
     const nombre = `cuadro_inversiones_${empresaId}_${periodo}_${timestamp}.xlsx`;
-    const ruta = path.join(OUTPUTS_DIR, nombre);
-    fs.mkdirSync(OUTPUTS_DIR, { recursive: true });
+    const ruta = path.join(TMP_DIR, nombre);
 
     await excelService.generarExcelComap(resultados, ruta, {
       cotizacion_usd: meta.cotizacion_usd,
@@ -161,33 +192,44 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/excel', async (
 
 // ── Simple mode endpoints ────────────────────────────────
 
-const SIMPLE_RESULTS_PATH = path.join(UPLOADS_DIR, '_resultados.json');
+const SIMPLE_RESULTS_KEY = 'simple_uploads/_resultados.json';
 
-router.post('/simple/upload', upload.array('files'), (req, res) => {
-  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-  const subidos = [];
-  for (const file of (req.files || [])) {
-    if (isSupported(file.originalname)) {
-      fs.writeFileSync(path.join(UPLOADS_DIR, file.originalname), file.buffer);
-      subidos.push(file.originalname);
+router.post('/simple/upload', upload.array('files'), async (req, res) => {
+  try {
+    const subidos = [];
+    for (const file of (req.files || [])) {
+      if (isSupported(file.originalname)) {
+        await supabaseService.uploadFile(`simple_uploads/${file.originalname}`, file.buffer, file.mimetype);
+        subidos.push(file.originalname);
+      }
     }
+    res.json({ subidos, total: subidos.length });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
-  res.json({ subidos, total: subidos.length });
 });
 
-router.get('/simple/resultados', (_req, res) => {
-  if (fs.existsSync(SIMPLE_RESULTS_PATH)) {
-    try { return res.json(JSON.parse(fs.readFileSync(SIMPLE_RESULTS_PATH, 'utf-8'))); }
-    catch { }
+router.get('/simple/resultados', async (_req, res) => {
+  try {
+    const buffer = await supabaseService.downloadFile(SIMPLE_RESULTS_KEY);
+    return res.json(JSON.parse(buffer.toString('utf-8')));
+  } catch {
+    res.json([]);
   }
-  res.json([]);
 });
 
 router.get('/simple/analizar', async (_req, res) => {
   try {
-    const resultados = await facturaService.analizarFacturas(UPLOADS_DIR);
-    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-    fs.writeFileSync(SIMPLE_RESULTS_PATH, JSON.stringify(resultados, null, 2), 'utf-8');
+    const fileList = await supabaseService.listFiles('simple_uploads');
+    const archivosData = [];
+    for (const f of (fileList || [])) {
+      if (f.name === '_resultados.json' || !isSupported(f.name)) continue;
+      const buffer = await supabaseService.downloadFile(`simple_uploads/${f.name}`);
+      archivosData.push({ buffer, mimeType: getMimeType(f.name), filename: f.name });
+    }
+    
+    const resultados = await facturaService.analizarMultipleArchivos(archivosData);
+    await supabaseService.uploadFile(SIMPLE_RESULTS_KEY, Buffer.from(JSON.stringify(resultados, null, 2)), 'application/json');
     res.json(resultados);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -197,16 +239,27 @@ router.get('/simple/analizar', async (_req, res) => {
 router.get('/simple/excel', async (_req, res) => {
   try {
     let resultados = [];
-    if (fs.existsSync(SIMPLE_RESULTS_PATH)) {
-      try { resultados = JSON.parse(fs.readFileSync(SIMPLE_RESULTS_PATH, 'utf-8')); } catch { }
-    }
+    try {
+      const buffer = await supabaseService.downloadFile(SIMPLE_RESULTS_KEY);
+      resultados = JSON.parse(buffer.toString('utf-8'));
+    } catch { }
+    
     if (!resultados.length) {
-      resultados = await facturaService.analizarFacturas(UPLOADS_DIR);
+       // fallback inline analyze
+       const fileList = await supabaseService.listFiles('simple_uploads');
+       const archivosData = [];
+       for (const f of (fileList || [])) {
+          if (f.name === '_resultados.json' || !isSupported(f.name)) continue;
+          const buffer = await supabaseService.downloadFile(`simple_uploads/${f.name}`);
+          archivosData.push({ buffer, mimeType: getMimeType(f.name), filename: f.name });
+       }
+       resultados = await facturaService.analizarMultipleArchivos(archivosData);
     }
     if (!resultados.length) return res.status(404).json({ error: 'No hay facturas procesadas' });
-    const ruta = path.join(OUTPUTS_DIR, 'facturas_extraidas.xlsx');
-    fs.mkdirSync(OUTPUTS_DIR, { recursive: true });
+    
+    const ruta = path.join(TMP_DIR, 'facturas_extraidas.xlsx');
     await excelService.generarExcelSimple(resultados, ruta);
+    
     res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Content-Disposition': 'attachment; filename=facturas_extraidas.xlsx',
@@ -223,26 +276,25 @@ router.post('/simple/asociar', async (req, res) => {
     if (!empresaId || !proyectoId || !periodo) return res.status(400).json({ error: 'Faltan datos' });
 
     let resultadosSimples = [];
-    if (fs.existsSync(SIMPLE_RESULTS_PATH)) {
-      try { resultadosSimples = JSON.parse(fs.readFileSync(SIMPLE_RESULTS_PATH, 'utf-8')); } catch { }
-    }
+    try {
+      const buffer = await supabaseService.downloadFile(SIMPLE_RESULTS_KEY);
+      resultadosSimples = JSON.parse(buffer.toString('utf-8'));
+    } catch { }
 
     if (!resultadosSimples.length) {
       return res.status(400).json({ error: 'No hay facturas procesadas para asociar' });
     }
 
-    const carpetaDestino = proyectoService.getRutaFacturas(empresaId, proyectoId, periodo);
-    fs.mkdirSync(carpetaDestino, { recursive: true });
-
+    const folderPath = `proyectos/${empresaId}/${proyectoId}/${periodo}`;
     let copiados = 0;
+    
     for (const r of resultadosSimples) {
       if (r.archivo) {
-        const srcPath = path.join(UPLOADS_DIR, r.archivo);
-        const destPath = path.join(carpetaDestino, r.archivo);
-        if (fs.existsSync(srcPath)) {
-          fs.copyFileSync(srcPath, destPath);
-          copiados++;
-        }
+         try {
+           const srcBuf = await supabaseService.downloadFile(`simple_uploads/${r.archivo}`);
+           await supabaseService.uploadFile(`${folderPath}/${r.archivo}`, srcBuf, getMimeType(r.archivo));
+           copiados++;
+         } catch { } // ignore missing files
       }
     }
 
@@ -256,7 +308,7 @@ router.post('/simple/asociar', async (req, res) => {
     const combinedResults = Array.from(destinoMap.values());
     await guardarResultadosDB(proyectoId, periodo, combinedResults);
 
-    try { fs.unlinkSync(SIMPLE_RESULTS_PATH); } catch (e) { }
+    try { await supabaseService.deleteFile(SIMPLE_RESULTS_KEY); } catch (e) { }
 
     res.json({ success: true, asociados: resultadosSimples.length, archivos_copiados: copiados });
   } catch (e) {
