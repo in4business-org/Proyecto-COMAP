@@ -38,8 +38,8 @@ class ExcelService {
     });
   }
 
-  copyStyleFromPreviousRow(ws, targetRowNumber) {
-    const sourceRowNumber = targetRowNumber - 1;
+  copyStyleToNewRow(ws, targetRowNumber) {
+    const sourceRowNumber = targetRowNumber + 1;
     if (sourceRowNumber < 1) return;
 
     const sourceRow = ws.getRow(sourceRowNumber);
@@ -165,7 +165,7 @@ class ExcelService {
       const rowNumber = config.insertRow;
 
       ws.spliceRows(rowNumber, 0, []);
-      this.copyStyleFromPreviousRow(ws, rowNumber);
+      this.copyStyleToNewRow(ws, rowNumber);
       this.writeFacturaRow(ws, rowNumber, factura);
     }
 
