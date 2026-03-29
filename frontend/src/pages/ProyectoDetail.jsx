@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import {
   ArrowLeft, Upload, Download, FileText,
-  CheckSquare, Calculator, Check, FolderOpen, Plus
+  CheckSquare, Calculator, Check, FolderOpen, Plus, RefreshCw
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -27,6 +27,7 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
   const [editedResults, setEditedResults] = useState([])
   const [savingEdit, setSavingEdit] = useState(false)
   const [selectedRows, setSelectedRows] = useState([])
+  const [reprocesando, setReprocesando] = useState(false)
   const [cotizacion, setCotizacion] = useState(null)
   const [loadingCotizacion, setLoadingCotizacion] = useState(true)
 
@@ -160,16 +161,44 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
     setSelectedRows([])
   }
 
+  const handleReprocesarSeleccionadas = async () => {
+    const archivos = selectedRows
+      .map(i => editedResults[i]?.archivo)
+      .filter(Boolean)
+    if (!archivos.length) return
+    setReprocesando(true)
+    try {
+      const nuevos = await factApi.reprocesar(empresaId, proyectoId, activePeriodo, archivos)
+      setEditedResults(current => [
+        ...current.filter((_, i) => !selectedRows.includes(i)),
+        ...nuevos,
+      ])
+      setSelectedRows([])
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setReprocesando(false)
+    }
+  }
+
   const handleUpload = async () => {
     if (!files.length) return
     setUploading(true)
     setUploadMsg('')
     try {
-      const res = await factApi.upload(empresaId, proyectoId, activePeriodo, files)
-      setUploadMsg(`${res.total} archivo(s) subidos`)
+      const prevCount = results?.length || 0
+      const updated = await factApi.uploadAndProcess(empresaId, proyectoId, activePeriodo, files)
+      setResults(updated)
+      setResultsCache(prev => ({ ...prev, [activePeriodo]: updated }))
+      setPeriodoCounts(prev => ({ ...prev, [activePeriodo]: updated?.length || 0 }))
+      const nuevas = (updated?.length || 0) - prevCount
+      setUploadMsg(nuevas > 0 ? `${nuevas} factura(s) procesada(s)` : 'Archivos procesados sin nuevas facturas detectadas')
       setFiles([])
       document.getElementById('factura-upload').value = ''
-    } catch (err) { console.error(err) }
+    } catch (err) {
+      console.error(err)
+      setUploadMsg('Error al procesar los archivos')
+    }
     finally { setUploading(false) }
   }
 
@@ -177,7 +206,7 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
     setEditedResults(current => [...current, {
       descripcion: '', numero_factura: '', proveedor: '', rut: '',
       fecha: '', monto: null, moneda: 'UYU', cantidad: 1,
-      categoria: null, rut_receptor: '', razon_social_receptor: '',
+      categoria: null, tipo_comprobante: 'Factura', rut_receptor: '', razon_social_receptor: '',
       texto_extraido: false,
     }])
   }
@@ -293,7 +322,7 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
             {files.length > 0 && (
               <div className="mt-5 flex justify-center">
                 <Button onClick={handleUpload} disabled={uploading} size="sm" className="h-[30px] px-6 text-[12px]">
-                  {uploading ? <><Spinner size={12} className="mr-2"/> Subiendo...</> : 'Subir archivos'}
+                  {uploading ? <><Spinner size={12} className="mr-2"/> Procesando...</> : 'Subir y procesar'}
                 </Button>
               </div>
             )}
@@ -343,6 +372,16 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                     {importing ? <Spinner size={12} /> : <Upload size={13} />}
                     Importar
                   </Button>
+                  <Button
+                    onClick={handleExport}
+                    disabled={exporting || totalFacturas === 0}
+                    variant="default"
+                    size="sm"
+                    className="h-[28px] text-[11px] gap-1.5 bg-success hover:bg-success/90 text-success-foreground"
+                  >
+                    {exporting ? <Spinner size={12} /> : <Download size={13} />}
+                    Exportar COMAP
+                  </Button>
                 </>
               ) : (
                 <>
@@ -375,6 +414,16 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                     Cancelar
                   </Button>
                   <Button
+                    onClick={handleReprocesarSeleccionadas}
+                    disabled={!selectedRows.some(i => editedResults[i]?.archivo) || reprocesando}
+                    variant="secondary"
+                    size="sm"
+                    className="h-[28px] text-[11px] gap-1.5"
+                  >
+                    {reprocesando ? <Spinner size={12} /> : <RefreshCw size={13} />}
+                    Reprocesar seleccionadas
+                  </Button>
+                  <Button
                     onClick={handleDeleteSelected}
                     disabled={!selectedRows.length || savingEdit}
                     variant="destructive"
@@ -385,17 +434,6 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                   </Button>
                 </>
               )}
-
-              <Button
-                onClick={handleExport}
-                disabled={exporting || totalFacturas === 0 || isEditing}
-                variant="default"
-                size="sm"
-                className="h-[28px] text-[11px] gap-1.5 bg-success hover:bg-success/90 text-success-foreground"
-              >
-                {exporting ? <Spinner size={12} /> : <Download size={13} />}
-                Exportar COMAP
-              </Button>
             </div>
           </div>
           
@@ -454,7 +492,7 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                             />
                           </th>
                         )}
-                        {['Descripción', 'N° Factura', 'Proveedor', 'Fecha', 'Monto', 'Moneda', 'Categoría', 'Estado'].map((h) => (
+                        {['Descripción', 'N° Factura', 'Proveedor', 'Fecha', 'Monto', 'Moneda', 'Categoría', 'Tipo', 'Estado'].map((h) => (
                           <th
                             key={h}
                             className={cn(
@@ -495,9 +533,9 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                               )}
                             </td>
                             {/* N° Factura */}
-                            <td className={isEditing ? cellEdit : "px-3 py-2.5 font-mono whitespace-nowrap"}>
+                            <td className={isEditing ? cellEdit : "px-3 py-2.5 whitespace-nowrap"}>
                               {isEditing ? (
-                                <input value={r.numero_factura || ''} onChange={(e) => handleFieldChange(i, 'numero_factura', e.target.value)} className={cn(inputEdit, "font-mono")} />
+                                <input value={r.numero_factura || ''} onChange={(e) => handleFieldChange(i, 'numero_factura', e.target.value)} className={inputEdit} />
                               ) : (
                                 r.numero_factura || '--'
                               )}
@@ -511,23 +549,23 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                               )}
                             </td>
                             {/* Fecha */}
-                            <td className={isEditing ? cellEdit : "px-3 py-2.5 font-mono whitespace-nowrap"}>
+                            <td className={isEditing ? cellEdit : "px-3 py-2.5 whitespace-nowrap"}>
                               {isEditing ? (
-                                <input type="date" value={toDateInput(r.fecha || '')} onChange={(e) => handleFieldChange(i, 'fecha', fromDateInput(e.target.value))} className={cn(inputEdit, "font-mono dark:scheme-dark")} />
+                                <input type="date" value={toDateInput(r.fecha || '')} onChange={(e) => handleFieldChange(i, 'fecha', fromDateInput(e.target.value))} className={cn(inputEdit, "dark:scheme-dark")} />
                               ) : (
                                 r.fecha || '--'
                               )}
                             </td>
                             {/* Monto */}
-                            <td className={isEditing ? cellEdit : "px-3 py-2.5 font-mono tabular-nums text-right"}>
+                            <td className={isEditing ? cellEdit : "px-3 py-2.5 text-right"}>
                               {isEditing ? (
-                                <input type="number" step="0.01" value={r.monto ?? ''} onChange={(e) => handleFieldChange(i, 'monto', e.target.value)} className={cn(inputEdit, "font-mono text-right w-24")} />
+                                <input type="number" step="0.01" value={r.monto ?? ''} onChange={(e) => handleFieldChange(i, 'monto', e.target.value)} className={cn(inputEdit, "text-right w-24")} />
                               ) : (
                                 r.monto != null ? r.monto.toLocaleString() : '--'
                               )}
                             </td>
                             {/* Moneda */}
-                            <td className={isEditing ? cellEdit : "px-3 py-2.5 font-mono"}>
+                            <td className={isEditing ? cellEdit : "px-3 py-2.5"}>
                               {isEditing ? (
                                 <select value={(r.moneda || '').trim()} onChange={(e) => handleFieldChange(i, 'moneda', e.target.value)} className={selectEdit}>
                                   <option value="">--</option>
@@ -557,6 +595,18 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                                 </select>
                               ) : (
                                 r.categoria || '--'
+                              )}
+                            </td>
+                            {/* Tipo de comprobante */}
+                            <td className={isEditing ? cellEdit : "px-3 py-2.5 whitespace-nowrap"}>
+                              {isEditing ? (
+                                <select value={r.tipo_comprobante || ''} onChange={(e) => handleFieldChange(i, 'tipo_comprobante', e.target.value)} className={selectEdit}>
+                                  <option value="">--</option>
+                                  <option value="Factura">Factura</option>
+                                  <option value="Presupuesto">Presupuesto</option>
+                                </select>
+                              ) : (
+                                r.tipo_comprobante || '--'
                               )}
                             </td>
                             {/* Estado */}

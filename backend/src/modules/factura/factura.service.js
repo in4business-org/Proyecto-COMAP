@@ -20,6 +20,7 @@ function mapGeminiItemToLegacy(item, archivo) {
     categoria: item.categoria || null,
     rut_receptor: item.rut_receptor || null,
     razon_social_receptor: item.razon_social_receptor || null,
+    tipo_comprobante: item.tipo_comprobante || null,
     texto_extraido: true,
   };
 }

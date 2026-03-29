@@ -66,6 +66,11 @@ export const facturas = {
     files.forEach(f => fd.append('files', f));
     return request(`/empresas/${empresaId}/proyectos/${proyectoId}/${periodo}/upload`, { method: 'POST', body: fd });
   },
+  uploadAndProcess: (empresaId, proyectoId, periodo, files) => {
+    const fd = new FormData();
+    files.forEach(f => fd.append('files', f));
+    return request(`/empresas/${empresaId}/proyectos/${proyectoId}/${periodo}/subir-y-procesar`, { method: 'POST', body: fd });
+  },
   getResults: (empresaId, proyectoId, periodo) =>
     request(`/empresas/${empresaId}/proyectos/${proyectoId}/${periodo}/resultados`),
   analyze: (empresaId, proyectoId, periodo) =>
@@ -78,6 +83,11 @@ export const facturas = {
     files.forEach(f => fd.append('files', f));
     return request('/simple/upload', { method: 'POST', body: fd });
   },
+  reprocesar: (empresaId, proyectoId, periodo, archivos) =>
+    request(`/empresas/${empresaId}/proyectos/${proyectoId}/${periodo}/reprocesar`, {
+      method: 'POST',
+      body: JSON.stringify({ archivos }),
+    }),
   updateResults: (empresaId, proyectoId, periodo, results) =>
     request(`/empresas/${empresaId}/proyectos/${proyectoId}/${periodo}`, {
       method: 'PUT',

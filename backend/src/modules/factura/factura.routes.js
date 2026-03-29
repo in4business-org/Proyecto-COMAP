@@ -32,30 +32,29 @@ function getMimeType(filename) {
 
 /** Save results to database */
 async function guardarResultadosDB(proyectoId, periodo, resultados) {
-  await prisma.factura.deleteMany({
-    where: { proyectoId, periodo }
-  });
-  
-  if (resultados && resultados.length > 0) {
-    const dataToInsert = resultados.map(r => ({
-      proyectoId,
-      periodo,
-      archivo: r.archivo || null,
-      descripcion: r.descripcion || null,
-      numero_factura: r.numero_factura || null,
-      proveedor: r.proveedor || null,
-      rut: r.rut || null,
-      fecha: r.fecha || null,
-      monto: r.monto ? parseFloat(r.monto) : null,
-      moneda: r.moneda || null,
-      cantidad: r.cantidad ? parseInt(r.cantidad) : 1,
-      categoria: r.categoria || null,
-      rut_receptor: r.rut_receptor || null,
-      razon_social_receptor: r.razon_social_receptor || null,
-      texto_extraido: Boolean(r.texto_extraido)
-    }));
-    await prisma.factura.createMany({ data: dataToInsert });
-  }
+  const dataToInsert = (resultados || []).map(r => ({
+    proyectoId,
+    periodo,
+    archivo: r.archivo || null,
+    descripcion: r.descripcion || null,
+    numero_factura: r.numero_factura || null,
+    proveedor: r.proveedor || null,
+    rut: r.rut || null,
+    fecha: r.fecha || null,
+    monto: r.monto ? parseFloat(r.monto) : null,
+    moneda: r.moneda || null,
+    cantidad: r.cantidad ? parseInt(r.cantidad) : 1,
+    categoria: r.categoria || null,
+    rut_receptor: r.rut_receptor || null,
+    razon_social_receptor: r.razon_social_receptor || null,
+    tipo_comprobante: r.tipo_comprobante || null,
+    texto_extraido: Boolean(r.texto_extraido)
+  }));
+
+  await prisma.$transaction([
+    prisma.factura.deleteMany({ where: { proyectoId, periodo } }),
+    ...(dataToInsert.length > 0 ? [prisma.factura.createMany({ data: dataToInsert })] : []),
+  ]);
 }
 
 /** Read persisted results from db */
@@ -84,6 +83,89 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/upload', upload
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// POST  upload + process files (appends to existing results)
+router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/subir-y-procesar', upload.array('files'), async (req, res) => {
+  try {
+    const { empresaId, proyectoId, periodo } = req.params;
+    const folderPath = `proyectos/${empresaId}/${proyectoId}/${periodo}`;
+
+    const archivosData = [];
+    for (const file of (req.files || [])) {
+      if (!isSupported(file.originalname)) continue;
+      await supabaseService.uploadFile(`${folderPath}/${file.originalname}`, file.buffer, file.mimetype);
+      archivosData.push({ buffer: file.buffer, mimeType: getMimeType(file.originalname), filename: file.originalname });
+    }
+
+    if (!archivosData.length) {
+      return res.json(await leerResultadosDB(proyectoId, periodo));
+    }
+
+    const nuevos = await facturaService.analizarMultipleArchivos(archivosData);
+
+    if (nuevos.length > 0) {
+      await prisma.factura.createMany({
+        data: nuevos.map(r => ({
+          proyectoId,
+          periodo,
+          archivo: r.archivo || null,
+          descripcion: r.descripcion || null,
+          numero_factura: r.numero_factura || null,
+          proveedor: r.proveedor || null,
+          rut: r.rut || null,
+          fecha: r.fecha || null,
+          monto: r.monto ? parseFloat(r.monto) : null,
+          moneda: r.moneda || null,
+          cantidad: r.cantidad ? parseInt(r.cantidad) : 1,
+          categoria: r.categoria || null,
+          rut_receptor: r.rut_receptor || null,
+          razon_social_receptor: r.razon_social_receptor || null,
+          tipo_comprobante: r.tipo_comprobante || null,
+          texto_extraido: Boolean(r.texto_extraido),
+        })),
+      });
+    }
+
+    res.json(await leerResultadosDB(proyectoId, periodo));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST  reprocess specific files (returns new data without saving)
+router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/reprocesar', async (req, res) => {
+  try {
+    const { empresaId, proyectoId, periodo } = req.params;
+    const { archivos } = req.body;
+
+    if (!Array.isArray(archivos) || !archivos.length) {
+      return res.status(400).json({ error: 'archivos debe ser un array no vacío' });
+    }
+
+    const folderPath = `proyectos/${empresaId}/${proyectoId}/${periodo}`;
+    const archivosData = [];
+
+    for (const filename of archivos) {
+      try {
+        const buffer = await supabaseService.downloadFile(`${folderPath}/${filename}`);
+        archivosData.push({ buffer, mimeType: getMimeType(filename), filename });
+      } catch (e) {
+        console.warn(`No se pudo descargar ${filename}:`, e.message);
+      }
+    }
+
+    if (!archivosData.length) {
+      return res.status(404).json({ error: 'No se pudieron descargar los archivos indicados' });
+    }
+
+    const resultados = await facturaService.analizarMultipleArchivos(archivosData);
+    res.json(resultados);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
   }
 });
 
@@ -222,6 +304,7 @@ router.get('/empresas/:empresaId/proyectos/:proyectoId/:periodo/template-importa
       { header: 'moneda (UYU o USD)', key: 'moneda', width: 16 },
       { header: 'cantidad', key: 'cantidad', width: 10 },
       { header: 'categoria', key: 'categoria', width: 28 },
+      { header: 'tipo_comprobante (Factura o Presupuesto)', key: 'tipo_comprobante', width: 32 },
     ];
     ws.getColumn(5).numFmt = 'DD/MM/YYYY';
     ws.getRow(1).font = { bold: true };
@@ -266,12 +349,13 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/importar', uplo
       const cantidadRaw = row.getCell(8).value;
       const cantidad = cantidadRaw != null && cantidadRaw !== '' ? parseInt(cantidadRaw) : 1;
       const categoria = row.getCell(9).text?.trim() || null;
+      const tipo_comprobante = row.getCell(10).text?.trim() || null;
 
       if (!descripcion && !numero_factura && !proveedor && !monto) return;
 
       nuevas.push({
         descripcion, numero_factura, proveedor, rut, fecha,
-        monto, moneda, cantidad, categoria, texto_extraido: false,
+        monto, moneda, cantidad, categoria, tipo_comprobante, texto_extraido: false,
       });
     });
 

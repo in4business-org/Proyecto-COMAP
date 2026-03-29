@@ -22,7 +22,8 @@ Usá exactamente esta estructura:
     "razon_social_receptor": "string o null",
     "moneda": "$ | USD | null",
     "subtotal": number o null,
-    "categoria": "Maquinaria | Equipos | Instalaciones | Vehiculos | Materiales | Mano de Obra | Leyes Sociales | Honorarios | null"
+    "categoria": "Maquinaria | Equipos | Instalaciones | Vehiculos | Materiales | Mano de Obra | Leyes Sociales | Honorarios | null",
+    "tipo_comprobante": "Factura | Presupuesto | null"
   }
 ]
 
@@ -86,6 +87,11 @@ Reglas para categoria:
 - Elegí la categoría más probable según la descripción del item y el contexto de la factura.
 - Si no es posible inferirla con suficiente confianza, devolver null.
 - No inventar categorías fuera de la lista.
+
+Reglas para tipo_comprobante:
+- Si el documento es una factura comercial (e-factura, factura, factura ticket, etc.), devolver "Factura".
+- Si el documento es un presupuesto, cotización o proforma, devolver "Presupuesto".
+- Si no se puede determinar con seguridad, devolver null.
 
 Validación final:
 - La salida debe ser JSON válido.
