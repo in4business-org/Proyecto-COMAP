@@ -6,10 +6,13 @@ import {
   Menu,
   X,
   Plus,
-  ChevronRight
+  ChevronRight,
+  Sun,
+  Moon,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { empresas as empApi, proyectos as projApi } from '@/lib/api'
+import { useTheme } from '../../context/ThemeContext'
 
 const navigation = [
   { name: 'Inicio', href: '/', icon: LayoutDashboard }
@@ -19,6 +22,7 @@ export function Sidebar() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const location = useLocation()
   const navigate = useNavigate()
+  const { theme, toggleTheme } = useTheme()
 
   const [empresas, setEmpresas] = useState([])
   const [proyectosMap, setProyectosMap] = useState({})
@@ -28,7 +32,6 @@ export function Sidebar() {
     empApi.list().then(setEmpresas).catch(console.error)
   }, [])
 
-  // Al montar, chequear la URL actual para auto-expandir la empresa si estamos en una ruta de empresa
   useEffect(() => {
     const match = location.pathname.match(/^\/empresas\/([^/]+)/)
     if (match) {
@@ -45,8 +48,6 @@ export function Sidebar() {
   const toggleEmpresa = async (empresa) => {
     const isExpanding = expandedEmpresa !== empresa.id
     setExpandedEmpresa(isExpanding ? empresa.id : null)
-
-    // Navegar a la página de la empresa
     navigate(`/empresas/${empresa.id}`)
     setMobileOpen(false)
 
@@ -75,8 +76,8 @@ export function Sidebar() {
           className={cn(
             'flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium transition-all duration-150',
             isActive(item.href)
-              ? 'bg-white/[0.06] text-foreground'
-              : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.03]',
+              ? 'bg-accent text-foreground'
+              : 'text-muted-foreground hover:text-foreground hover:bg-accent/50',
           )}
         >
           <item.icon size={16} strokeWidth={1.8} />
@@ -108,11 +109,11 @@ export function Sidebar() {
               onClick={() => toggleEmpresa(emp)}
               className={cn(
                 'w-full flex items-center justify-between rounded-lg px-2 py-2 text-left transition-all duration-150',
-                isEmpActive ? 'bg-white/[0.06]' : 'hover:bg-white/[0.03]'
+                isEmpActive ? 'bg-accent' : 'hover:bg-accent/50'
               )}
             >
               <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-[26px] h-[26px] rounded-md bg-white/[0.04] border border-white/10 flex items-center justify-center shrink-0">
+                <div className="w-[26px] h-[26px] rounded-md bg-accent border border-border flex items-center justify-center shrink-0">
                   <span className="text-[11px] font-bold text-primary">{emp.nombre.charAt(0).toUpperCase()}</span>
                 </div>
                 <div className="flex flex-col min-w-0">
@@ -126,9 +127,8 @@ export function Sidebar() {
               />
             </button>
 
-            {/* Proyectos anidados */}
             {isExpanded && (
-              <div className="mt-1 mb-2 ml-[15px] pl-[15px] border-l border-white/10 flex flex-col gap-0.5">
+              <div className="mt-1 mb-2 ml-[15px] pl-[15px] border-l border-border flex flex-col gap-0.5">
                 {!proyectosMap[emp.id] ? (
                   <span className="text-[11px] text-muted-foreground/50 py-1">Cargando...</span>
                 ) : proyectosMap[emp.id].length === 0 ? (
@@ -146,7 +146,7 @@ export function Sidebar() {
                           'flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors',
                           isProjActive
                             ? 'bg-primary/15 text-primary'
-                            : 'text-muted-foreground hover:bg-white/[0.03] hover:text-foreground'
+                            : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
                         )}
                       >
                         <div className={cn("w-1 h-1 rounded-full shrink-0", isProjActive ? "bg-primary" : "bg-muted-foreground/40")} />
@@ -181,7 +181,7 @@ export function Sidebar() {
 
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex w-60 flex-col border-r border-border bg-[#0c0c0e] transition-transform duration-200 lg:translate-x-0 lg:static lg:z-auto',
+          'fixed inset-y-0 left-0 z-50 flex w-60 flex-col border-r border-border bg-card transition-transform duration-200 lg:translate-x-0 lg:static lg:z-auto',
           mobileOpen ? 'translate-x-0' : '-translate-x-full',
         )}
       >
@@ -192,12 +192,19 @@ export function Sidebar() {
           </button>
         </div>
 
-        <div className="flex-1 py-3 overflow-y-auto scrollbar-thin scrollbar-thumb-white/10">
+        <div className="flex-1 py-3 overflow-y-auto">
           {navContent}
         </div>
 
-        <div className="px-5 py-3 border-t border-border">
+        <div className="px-5 py-3 border-t border-border flex items-center justify-between">
           <p className="text-[10px] text-muted-foreground/40 tracking-wide">Decreto 329/025</p>
+          <button
+            onClick={toggleTheme}
+            title={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
+          >
+            {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
+          </button>
         </div>
       </aside>
     </>

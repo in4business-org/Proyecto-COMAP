@@ -495,7 +495,7 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                               )}
                             </td>
                             {/* N° Factura */}
-                            <td className={isEditing ? cellEdit : "px-3 py-2.5 font-mono text-muted-foreground whitespace-nowrap"}>
+                            <td className={isEditing ? cellEdit : "px-3 py-2.5 font-mono whitespace-nowrap"}>
                               {isEditing ? (
                                 <input value={r.numero_factura || ''} onChange={(e) => handleFieldChange(i, 'numero_factura', e.target.value)} className={cn(inputEdit, "font-mono")} />
                               ) : (
@@ -511,9 +511,9 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                               )}
                             </td>
                             {/* Fecha */}
-                            <td className={isEditing ? cellEdit : "px-3 py-2.5 font-mono text-muted-foreground whitespace-nowrap"}>
+                            <td className={isEditing ? cellEdit : "px-3 py-2.5 font-mono whitespace-nowrap"}>
                               {isEditing ? (
-                                <input type="date" value={toDateInput(r.fecha || '')} onChange={(e) => handleFieldChange(i, 'fecha', fromDateInput(e.target.value))} className={cn(inputEdit, "font-mono scheme-dark")} />
+                                <input type="date" value={toDateInput(r.fecha || '')} onChange={(e) => handleFieldChange(i, 'fecha', fromDateInput(e.target.value))} className={cn(inputEdit, "font-mono dark:scheme-dark")} />
                               ) : (
                                 r.fecha || '--'
                               )}
@@ -529,7 +529,7 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                             {/* Moneda */}
                             <td className={isEditing ? cellEdit : "px-3 py-2.5 font-mono"}>
                               {isEditing ? (
-                                <select value={r.moneda || ''} onChange={(e) => handleFieldChange(i, 'moneda', e.target.value)} className={selectEdit}>
+                                <select value={(r.moneda || '').trim()} onChange={(e) => handleFieldChange(i, 'moneda', e.target.value)} className={selectEdit}>
                                   <option value="">--</option>
                                   <option value="$">$</option>
                                   <option value="USD">USD</option>
