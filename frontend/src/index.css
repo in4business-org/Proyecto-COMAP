@@ -1,67 +1,137 @@
 @import "tailwindcss";
 
+/* Dark variant: applies when element is inside .dark (on <html>) */
 @custom-variant dark (&:is(.dark *));
 
-@theme {
-  /* Neutral palette - slightly lighter dark modern theme */
-  --color-background: #0f0f13;
-  --color-foreground: #fafafa;
-  --color-card: #15151a;
-  --color-card-foreground: #fafafa;
-  --color-popover: #18181e;
-  --color-popover-foreground: #fafafa;
+/* ============================================================
+   LIGHT MODE — default
+   ============================================================ */
+:root {
+  --background: #f8f7f4;
+  --foreground: #1a1a2e;
+  --card: #ffffff;
+  --card-foreground: #1a1a2e;
+  --popover: #ffffff;
+  --popover-foreground: #1a1a2e;
 
-  /* More vibrant, inviting indigo accent */
-  --color-primary: #8aa0fa;
-  --color-primary-foreground: #0f0f13;
-  
-  /* Lighter surface layers for better contrast and depth */
-  --color-secondary: #1a1a21;
-  --color-secondary-foreground: #fafafa;
-  --color-muted: #1d1d25;
-  --color-muted-foreground: #9494a8;
-  --color-accent: #23232c;
-  --color-accent-foreground: #fafafa;
+  /* Brand blue — dark in light mode for contrast */
+  --primary: #1a3a6b;
+  --primary-foreground: #ffffff;
 
-  /* Semantic */
-  --color-destructive: #f87171;
-  --color-destructive-foreground: #fafafa;
-  --color-border: #222233;
-  --color-input: #222233;
-  --color-ring: #8aa0fa;
-  --color-success: #34d399;
-  --color-warning: #fbbf24;
+  --secondary: #eef2f7;
+  --secondary-foreground: #1a1a2e;
+  --muted: #f1f0ed;
+  --muted-foreground: #6b7280;
+  --accent: #e8edf5;
+  --accent-foreground: #1a1a2e;
+
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border: #d1d9e6;
+  --input: #d1d9e6;
+  --ring: #1a3a6b;
+
+  --success: #16a34a;
+  --warning: #d97706;
+}
+
+/* ============================================================
+   DARK MODE — .dark on <html>
+   ============================================================ */
+.dark {
+  --background: #0f0f13;
+  --foreground: #fafafa;
+  --card: #15151a;
+  --card-foreground: #fafafa;
+  --popover: #18181e;
+  --popover-foreground: #fafafa;
+
+  /* Brand blue — lighter in dark mode for contrast */
+  --primary: #8aa0fa;
+  --primary-foreground: #0f0f13;
+
+  --secondary: #1a1a21;
+  --secondary-foreground: #fafafa;
+  --muted: #1d1d25;
+  --muted-foreground: #9494a8;
+  --accent: #23232c;
+  --accent-foreground: #fafafa;
+
+  --destructive: #f87171;
+  --destructive-foreground: #fafafa;
+  --border: #222233;
+  --input: #222233;
+  --ring: #8aa0fa;
+
+  --success: #34d399;
+  --warning: #fbbf24;
+}
+
+/* ============================================================
+   TAILWIND TOKEN MAPPING
+   @theme inline lets Tailwind reference these as CSS variables
+   so they respond to .dark toggling at runtime.
+   ============================================================ */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+
+  --font-sans: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  --font-display: "Lora", Georgia, serif;
 
   --radius-sm: 0.375rem;
   --radius-md: 0.5rem;
   --radius-lg: 0.75rem;
   --radius-xl: 1rem;
-
-  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
 }
 
+/* ============================================================
+   BASE STYLES
+   ============================================================ */
 @layer base {
   * {
-    border-color: var(--color-border);
+    border-color: var(--border);
   }
 
-  /* Add a subtle organic glow at the top right to break the solid color */
+  html {
+    background-color: var(--background);
+  }
+
   body {
-    background-color: var(--color-background);
-    color: var(--color-foreground);
+    background-color: var(--background);
+    color: var(--foreground);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
-    
-    background-image: 
-      radial-gradient(circle at 100% 0%, rgba(138, 160, 250, 0.04) 0%, transparent 50%),
-      radial-gradient(circle at 0% 100%, rgba(138, 160, 250, 0.02) 0%, transparent 50%);
+
+    /* Subtle ambient glow — adapts per theme */
+    background-image:
+      radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--primary) 6%, transparent) 0%, transparent 50%),
+      radial-gradient(circle at 0% 100%, color-mix(in srgb, var(--primary) 3%, transparent) 0%, transparent 50%);
     background-attachment: fixed;
   }
 
   ::selection {
-    background: rgba(138, 160, 250, 0.3);
+    background: color-mix(in srgb, var(--primary) 30%, transparent);
   }
 
   ::-webkit-scrollbar {
@@ -74,38 +144,39 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background: #32323b;
+    background: var(--border);
     border-radius: 100px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: #4a4a55;
+    background: var(--muted-foreground);
+  }
+
+  /* Force option elements to follow the theme in all browsers */
+  select option {
+    background-color: var(--card);
+    color: var(--foreground);
   }
 }
 
+/* ============================================================
+   ANIMATIONS
+   ============================================================ */
 @keyframes fade-up {
   from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: translateY(0); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes fade-in {
   from { opacity: 0; }
-  to { opacity: 1; }
+  to   { opacity: 1; }
 }
 
 @keyframes scale-in {
   from { opacity: 0; transform: scale(0.98); }
-  to { opacity: 1; transform: scale(1); }
+  to   { opacity: 1; transform: scale(1); }
 }
 
-.animate-fade-up {
-  animation: fade-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-.animate-fade-in {
-  animation: fade-in 0.4s ease-out both;
-}
-
-.animate-scale-in {
-  animation: scale-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
+.animate-fade-up   { animation: fade-up   0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.animate-fade-in   { animation: fade-in   0.4s ease-out both; }
+.animate-scale-in  { animation: scale-in  0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }

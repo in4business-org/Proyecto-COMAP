@@ -113,11 +113,11 @@ class ExcelService {
     // L = subtotal
     ws.getCell(rowNumber, 12).value = subtotal;
 
-    // M = formula: L * $C$5
-    ws.getCell(rowNumber, 13).value =
-    {
-      formula: `L${rowNumber}*$C$5`,
-    };
+    // M = monto en UI: si USD → subtotal*C4/C5, si UYU → subtotal/C5
+    const formula = moneda === 'USD'
+      ? `L${rowNumber}*$C$4/$C$5`
+      : `L${rowNumber}/$C$5`;
+    ws.getCell(rowNumber, 13).value = { formula };
   }
 
   async generarExcelComap(facturas, rutaSalida, opciones = {}) {
@@ -169,6 +169,7 @@ class ExcelService {
       this.writeFacturaRow(ws, rowNumber, factura);
     }
 
+    workbook.calcProperties = { fullCalcOnLoad: true };
     await workbook.xlsx.writeFile(rutaSalida);
     return rutaSalida;
   }

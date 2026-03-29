@@ -7,7 +7,7 @@ No agregues texto adicional.
 No agregues \`\`\`json.
 La respuesta debe ser solo JSON parseable.
 
-Debe haber un objeto por cada item de la factura.
+Debe haber un objeto por comprobante (factura), no por ítem.
 
 Usá exactamente esta estructura:
 [
@@ -15,7 +15,7 @@ Usá exactamente esta estructura:
     "descripcion": "string o null",
     "serie_numero_factura": "string o null",
     "fecha_comprobante": "DD/MM/YYYY o null",
-    "cantidad": number o null,
+    "cantidad": 1,
     "rut_emisor": "string o null",
     "razon_social_emisor": "string o null",
     "rut_receptor": "string o null",
@@ -28,11 +28,12 @@ Usá exactamente esta estructura:
 
 
 Reglas generales:
-- Debe haber un objeto por cada item de la factura.
-- Repetí los datos generales de la factura en cada objeto.
+- Debe haber exactamente un objeto por comprobante (factura), sin importar cuántos ítems tenga.
+- En "descripcion" resumí brevemente el contenido de la factura (qué se compró o qué servicio fue).
+- En "subtotal" usá el total o subtotal de la factura completa, no el de un ítem individual.
 - No inventes datos.
 - Si un dato no se puede determinar con seguridad, devolvé null.
-- "cantidad" y "subtotal" deben ser numéricos, no strings.
+- "subtotal" debe ser numérico, no string.
 - Remové separadores de miles.
 - Usá punto como separador decimal.
 
