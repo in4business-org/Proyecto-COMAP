@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { LoadingState, EmptyState, Spinner } from '@/components/ui/loading'
 import { cn } from '@/lib/utils'
-import { empresas as empApi, proyectos as projApi, facturas as factApi, checklist as checkApi, simulador as simApi } from '@/lib/api'
+import { empresas as empApi, proyectos as projApi, facturas as factApi, checklist as checkApi, simulador as simApi, cotizaciones as cotApi } from '@/lib/api'
 
 /* ─── Facturas ────────────────────────────────────── */
 
@@ -27,6 +27,8 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
   const [editedResults, setEditedResults] = useState([])
   const [savingEdit, setSavingEdit] = useState(false)
   const [selectedRows, setSelectedRows] = useState([])
+  const [cotizacion, setCotizacion] = useState(null)
+  const [loadingCotizacion, setLoadingCotizacion] = useState(true)
 
   // Cache to prevent loading spinners when switching back and forth
   const [resultsCache, setResultsCache] = useState({})
@@ -34,7 +36,15 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
   useEffect(() => {
     setEditedResults(results || [])
   }, [results])
-  
+
+  // Load cotización del mes anterior
+  useEffect(() => {
+    cotApi.getMesAnterior()
+      .then(setCotizacion)
+      .catch(() => setCotizacion(null))
+      .finally(() => setLoadingCotizacion(false))
+  }, [])
+
   // Load persisted results for current periodo
   useEffect(() => {
     // Show cached immediately if we have it
@@ -354,6 +364,26 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
             </div>
           </div>
           
+          {/* Cotización */}
+          <div className="flex items-center gap-3 mb-4 text-[12px] text-muted-foreground">
+            <span className="font-semibold uppercase tracking-wider text-[10px]">Cotización</span>
+            {loadingCotizacion ? (
+              <span className="text-muted-foreground/60">Consultando BCU...</span>
+            ) : cotizacion ? (
+              <>
+                <span className="bg-card border border-border/60 rounded px-2 py-0.5 font-mono">
+                  USD <span className="text-foreground font-semibold">${cotizacion.valor_usd.toFixed(2)}</span>
+                </span>
+                <span className="bg-card border border-border/60 rounded px-2 py-0.5 font-mono">
+                  UI <span className="text-foreground font-semibold">${cotizacion.valor_ui.toFixed(2)}</span>
+                </span>
+                <span className="text-[10px] text-muted-foreground/50">al {cotizacion.fecha}</span>
+              </>
+            ) : (
+              <span className="text-destructive/70 text-[11px]">Servicio BCU no disponible</span>
+            )}
+          </div>
+
           {/* Stats Bar */}
           {(results?.length > 0) && (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">

@@ -111,6 +111,11 @@ export const checklist = {
     request(`/empresas/${empresaId}/proyectos/${proyectoId}/checklist/${itemId}/archivo`),
 };
 
+// -- Cotizaciones
+export const cotizaciones = {
+  getMesAnterior: () => request('/cotizaciones/mes-anterior'),
+};
+
 // -- Simulador
 export const simulador = {
   download: (empresaId, proyectoId) =>
