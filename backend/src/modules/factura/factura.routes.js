@@ -10,6 +10,7 @@ const empresaService = require('../empresa/empresa.service');
 const supabaseService = require('../../config/supabase.config');
 const prisma = require('../../config/prisma');
 const cotizacionService = require('../cotizacion/cotizacion.service');
+const { formatearFecha } = require('../../common/utils/normalize');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
 const router = Router({ mergeParams: true });
@@ -195,6 +196,86 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/excel', async (
       'Content-Disposition': `attachment; filename=${nombre}`,
     });
     res.send(fs.readFileSync(ruta));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET  download import template
+router.get('/empresas/:empresaId/proyectos/:proyectoId/:periodo/template-importar', async (_req, res) => {
+  try {
+    const ExcelJS = require('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    const ws = workbook.addWorksheet('Facturas');
+
+    ws.columns = [
+      { header: 'descripcion', key: 'descripcion', width: 35 },
+      { header: 'numero_factura', key: 'numero_factura', width: 15 },
+      { header: 'proveedor', key: 'proveedor', width: 25 },
+      { header: 'rut', key: 'rut', width: 14 },
+      { header: 'fecha', key: 'fecha', width: 16 },
+      { header: 'monto', key: 'monto', width: 14 },
+      { header: 'moneda ($ o USD)', key: 'moneda', width: 16 },
+      { header: 'cantidad', key: 'cantidad', width: 10 },
+      { header: 'categoria', key: 'categoria', width: 28 },
+    ];
+    ws.getColumn(5).numFmt = 'DD/MM/YYYY';
+    ws.getRow(1).font = { bold: true };
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': 'attachment; filename=template_facturas.xlsx',
+    });
+    res.send(buffer);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST  import facturas from Excel
+router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/importar', upload.single('file'), async (req, res) => {
+  try {
+    const { proyectoId, periodo } = req.params;
+    if (!req.file?.buffer) return res.status(400).json({ error: 'No se recibió archivo' });
+
+    const ExcelJS = require('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(req.file.buffer);
+
+    const ws = workbook.worksheets[0];
+    const nuevas = [];
+
+    ws.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return;
+      const descripcion = row.getCell(1).text?.trim() || null;
+      const numero_factura = row.getCell(2).text?.trim() || null;
+      const proveedor = row.getCell(3).text?.trim() || null;
+      const rut = row.getCell(4).text?.trim() || null;
+      const fechaRaw = row.getCell(5).value;
+      const fecha = fechaRaw instanceof Date
+        ? formatearFecha(fechaRaw)
+        : (typeof fechaRaw === 'string' ? fechaRaw.trim() || null : null);
+      const montoRaw = row.getCell(6).value;
+      const monto = montoRaw != null && montoRaw !== '' ? parseFloat(montoRaw) : null;
+      const moneda = row.getCell(7).text?.trim() || null;
+      const cantidadRaw = row.getCell(8).value;
+      const cantidad = cantidadRaw != null && cantidadRaw !== '' ? parseInt(cantidadRaw) : 1;
+      const categoria = row.getCell(9).text?.trim() || null;
+
+      if (!descripcion && !numero_factura && !proveedor && !monto) return;
+
+      nuevas.push({
+        descripcion, numero_factura, proveedor, rut, fecha,
+        monto, moneda, cantidad, categoria, texto_extraido: false,
+      });
+    });
+
+    const existentes = await leerResultadosDB(proyectoId, periodo);
+    await guardarResultadosDB(proyectoId, periodo, [...existentes, ...nuevas]);
+    const updated = await leerResultadosDB(proyectoId, periodo);
+    res.json(updated);
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message });

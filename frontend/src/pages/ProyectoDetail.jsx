@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import {
-  ArrowLeft, Upload, FileSearch, Download, FileText,
-  CheckSquare, Calculator, Check, FolderOpen
+  ArrowLeft, Upload, Download, FileText,
+  CheckSquare, Calculator, Check, FolderOpen, Plus
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,8 +17,8 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
   const [activePeriodo, setActivePeriodo] = useState('presentacion')
   const [files, setFiles] = useState([])
   const [uploading, setUploading] = useState(false)
-  const [analyzing, setAnalyzing] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [importing, setImporting] = useState(false)
   const [results, setResults] = useState(null)
   const [loadingResults, setLoadingResults] = useState(true)
   const [uploadMsg, setUploadMsg] = useState('')
@@ -169,30 +169,43 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
       setUploadMsg(`${res.total} archivo(s) subidos`)
       setFiles([])
       document.getElementById('factura-upload').value = ''
-      
-      // Auto analyze when uploading completes, but only show analyzing state, not full load
-      setAnalyzing(true)
-      const newResults = await factApi.analyze(empresaId, proyectoId, activePeriodo)
-      setResults(newResults)
-      setPeriodoCounts(prev => ({ ...prev, [activePeriodo]: newResults?.length || 0 }))
-      
     } catch (err) { console.error(err) }
-    finally { 
-      setUploading(false)
-      setAnalyzing(false)
-    }
+    finally { setUploading(false) }
   }
 
-  const handleAnalyze = async () => {
-    setAnalyzing(true)
-    try { 
-      const newResults = await factApi.analyze(empresaId, proyectoId, activePeriodo)
-      setResults(newResults)
-      setResultsCache(prev => ({ ...prev, [activePeriodo]: newResults }))
-      setPeriodoCounts(prev => ({ ...prev, [activePeriodo]: newResults?.length || 0 }))
+  const handleAddRow = () => {
+    setEditedResults(current => [...current, {
+      descripcion: '', numero_factura: '', proveedor: '', rut: '',
+      fecha: '', monto: null, moneda: '$', cantidad: 1,
+      categoria: null, rut_receptor: '', razon_social_receptor: '',
+      texto_extraido: false,
+    }])
+  }
+
+  const handleDownloadTemplate = async () => {
+    try {
+      const blob = await factApi.downloadTemplate(empresaId, proyectoId, activePeriodo)
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = 'template_facturas.xlsx'
+      a.click()
+    } catch (err) { console.error(err) }
+  }
+
+  const handleImportMasivo = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setImporting(true)
+    try {
+      const updated = await factApi.importar(empresaId, proyectoId, activePeriodo, file)
+      setResults(updated)
+      setResultsCache(prev => ({ ...prev, [activePeriodo]: updated }))
+      setPeriodoCounts(prev => ({ ...prev, [activePeriodo]: updated?.length || 0 }))
+    } catch (err) { console.error(err) }
+    finally {
+      setImporting(false)
+      e.target.value = ''
     }
-    catch (err) { console.error(err) }
-    finally { setAnalyzing(false) }
   }
 
   const handleExport = async () => {
@@ -211,7 +224,6 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
   const totalFacturas = results?.length || 0
   const completas = results?.filter(f => f.proveedor && f.fecha && f.monto).length || 0
   const conMonto = results?.filter(f => f.monto).length || 0
-  const requierenOcr = results?.filter(f => !f.texto_extraido).length || 0
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -294,29 +306,55 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-5 gap-3">
             <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Resultados</h2>
             <div className="flex gap-2 flex-wrap">
-              <Button
-                onClick={handleAnalyze}
-                disabled={analyzing || isEditing}
-                variant="secondary"
-                size="sm"
-                className="h-[28px] text-[11px] gap-1.5 bg-background"
-              >
-                {analyzing ? <Spinner size={12} /> : <FileSearch size={13} />}
-                Analizar factura
-              </Button>
-
               {!isEditing ? (
-                <Button
-                  onClick={handleEditToggle}
-                  disabled={loadingResults || !results?.length}
-                  variant="outline"
-                  size="sm"
-                  className="h-[28px] text-[11px] gap-1.5"
-                >
-                  Editar
-                </Button>
+                <>
+                  <Button
+                    onClick={handleEditToggle}
+                    disabled={loadingResults}
+                    variant="outline"
+                    size="sm"
+                    className="h-[28px] text-[11px] gap-1.5"
+                  >
+                    Editar
+                  </Button>
+                  <input
+                    type="file"
+                    accept=".xlsx"
+                    id="import-masivo"
+                    className="hidden"
+                    onChange={handleImportMasivo}
+                  />
+                  <Button
+                    onClick={handleDownloadTemplate}
+                    variant="outline"
+                    size="sm"
+                    className="h-[28px] text-[11px] gap-1.5"
+                  >
+                    <Download size={13} />
+                    Template
+                  </Button>
+                  <Button
+                    onClick={() => document.getElementById('import-masivo').click()}
+                    disabled={importing}
+                    variant="secondary"
+                    size="sm"
+                    className="h-[28px] text-[11px] gap-1.5 bg-background"
+                  >
+                    {importing ? <Spinner size={12} /> : <Upload size={13} />}
+                    Importar
+                  </Button>
+                </>
               ) : (
                 <>
+                  <Button
+                    onClick={handleAddRow}
+                    variant="outline"
+                    size="sm"
+                    className="h-[28px] text-[11px] gap-1.5"
+                  >
+                    <Plus size={13} />
+                    Agregar
+                  </Button>
                   <Button
                     onClick={handleSaveEdit}
                     disabled={savingEdit}
@@ -327,7 +365,6 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                     {savingEdit ? <Spinner size={12} /> : <Check size={13} />}
                     Ok
                   </Button>
-
                   <Button
                     onClick={handleEditToggle}
                     disabled={savingEdit}
@@ -337,17 +374,15 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                   >
                     Cancelar
                   </Button>
-                  {isEditing && (
-                    <Button
-                      onClick={handleDeleteSelected}
-                      disabled={!selectedRows.length || savingEdit}
-                      variant="destructive"
-                      size="sm"
-                      className="h-[28px] text-[11px] gap-1.5"
-                    >
-                      Eliminar seleccionadas
-                    </Button>
-                  )}
+                  <Button
+                    onClick={handleDeleteSelected}
+                    disabled={!selectedRows.length || savingEdit}
+                    variant="destructive"
+                    size="sm"
+                    className="h-[28px] text-[11px] gap-1.5"
+                  >
+                    Eliminar seleccionadas
+                  </Button>
                 </>
               )}
 
@@ -386,12 +421,11 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
 
           {/* Stats Bar */}
           {(results?.length > 0) && (
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+            <div className="grid grid-cols-3 gap-3 mb-5">
               {[
                 { label: 'Facturas', val: totalFacturas },
                 { label: 'Completas', val: completas, color: 'text-success' },
                 { label: 'Con monto', val: conMonto },
-                { label: 'Requieren OCR', val: requierenOcr, color: requierenOcr > 0 ? 'text-destructive' : 'text-success' }
               ].map(stat => (
                 <div key={stat.label} className="bg-card border border-border/60 rounded-lg p-3">
                   <p className={cn("text-xl font-mono font-semibold", stat.color || "text-foreground")}>{stat.val}</p>
@@ -402,18 +436,17 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
           )}
 
           {/* Results table */}
-          {analyzing && <LoadingState message="Procesando facturas..." />}
-          {loadingResults && !analyzing && <LoadingState message="Cargando resultados guardados..." />}
-          
-          {results && !analyzing && !loadingResults && (
+          {loadingResults && <LoadingState message="Cargando resultados guardados..." />}
+
+          {results && !loadingResults && (
             <div>
-              {results.length > 0 ? (
-                <div className="border border-border/80 rounded-lg overflow-x-auto shadow-sm">
-                  <table className="w-full text-sm">
+              {results.length > 0 || isEditing ? (
+                <div className={cn("overflow-x-auto shadow-sm", isEditing ? "border border-border/60 rounded-lg" : "border border-border/80 rounded-lg")}>
+                  <table className={cn("w-full text-[12px] min-w-[860px]", isEditing && "border-collapse")}>
                     <thead>
-                      <tr>
+                      <tr className={cn("border-b", isEditing ? "border-border/50 bg-muted/30" : "border-border/60")}>
                         {isEditing && (
-                          <th className="px-4 py-3 text-left">
+                          <th className="w-8 px-3 py-2 border-r border-border/30">
                             <input
                               type="checkbox"
                               checked={editedResults.length > 0 && selectedRows.length === editedResults.length}
@@ -421,24 +454,31 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                             />
                           </th>
                         )}
-
                         {['Descripción', 'N° Factura', 'Proveedor', 'Fecha', 'Monto', 'Moneda', 'Categoría', 'Estado'].map((h) => (
                           <th
                             key={h}
-                            className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+                            className={cn(
+                              "py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground",
+                              isEditing ? "px-2 border-r border-border/30 last:border-r-0" : "px-3"
+                            )}
                           >
                             {h}
                           </th>
                         ))}
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-border/60">
+                    <tbody className={cn(isEditing ? "" : "divide-y divide-border/50")}>
                       {(isEditing ? editedResults : results).map((r, i) => {
                         const completado = r.proveedor && r.fecha && r.monto
+                        const cellEdit = "p-0 border-r border-b border-border/25 last:border-r-0"
+                        const inputEdit = "w-full min-h-[34px] bg-transparent text-foreground px-2 py-1 text-[12px] outline-none focus:bg-primary/5 placeholder:text-muted-foreground/40"
+                        const selectEdit = "w-full min-h-[34px] bg-background text-foreground px-2 py-1 text-[12px] outline-none focus:bg-primary/5 cursor-pointer"
+                        const toDateInput = (v) => { if (!v) return ''; const [d, m, y] = v.split('/'); return d && m && y ? `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}` : '' }
+                        const fromDateInput = (v) => { if (!v) return ''; const [y, m, d] = v.split('-'); return d && m && y ? `${d}/${m}/${y}` : '' }
                         return (
-                          <tr key={i} className="bg-card hover:bg-accent/40 transition-colors">
+                          <tr key={i} className={cn(isEditing ? "last:border-b-0" : "bg-card hover:bg-accent/30 transition-colors")}>
                             {isEditing && (
-                              <td className="px-4 py-3">
+                              <td className="w-8 px-3 border-r border-b border-border/25">
                                 <input
                                   type="checkbox"
                                   checked={selectedRows.includes(i)}
@@ -446,88 +486,62 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                                 />
                               </td>
                             )}
-                            <td className="px-4 py-3 text-[12px] max-w-[260px]">
+                            {/* Descripción */}
+                            <td className={isEditing ? cellEdit : "px-3 py-2.5 max-w-[220px]"}>
                               {isEditing ? (
-                                <Input
-                                  value={r.descripcion || ''}
-                                  onChange={(e) => handleFieldChange(i, 'descripcion', e.target.value)}
-                                  className="h-8 text-[12px]"
-                                />
+                                <input value={r.descripcion || ''} onChange={(e) => handleFieldChange(i, 'descripcion', e.target.value)} className={inputEdit} />
                               ) : (
-                                <div className="truncate" title={r.descripcion || ''}>
-                                  {r.descripcion || '--'}
-                                </div>
+                                <div className="truncate" title={r.descripcion || ''}>{r.descripcion || '--'}</div>
                               )}
                             </td>
-                            <td className="px-4 py-3 text-[12px] font-mono text-muted-foreground">
+                            {/* N° Factura */}
+                            <td className={isEditing ? cellEdit : "px-3 py-2.5 font-mono text-muted-foreground whitespace-nowrap"}>
                               {isEditing ? (
-                                <Input
-                                  value={r.numero_factura || ''}
-                                  onChange={(e) => handleFieldChange(i, 'numero_factura', e.target.value)}
-                                  className="h-8 text-[12px]"
-                                />
+                                <input value={r.numero_factura || ''} onChange={(e) => handleFieldChange(i, 'numero_factura', e.target.value)} className={cn(inputEdit, "font-mono")} />
                               ) : (
                                 r.numero_factura || '--'
                               )}
                             </td>
-                            <td className="px-4 py-3 text-[13px]">
+                            {/* Proveedor */}
+                            <td className={isEditing ? cellEdit : "px-3 py-2.5"}>
                               {isEditing ? (
-                                <Input
-                                  value={r.proveedor || ''}
-                                  onChange={(e) => handleFieldChange(i, 'proveedor', e.target.value)}
-                                  className="h-8 text-[12px]"
-                                />
+                                <input value={r.proveedor || ''} onChange={(e) => handleFieldChange(i, 'proveedor', e.target.value)} className={inputEdit} />
                               ) : (
                                 r.proveedor || '--'
                               )}
                             </td>
-                            <td className="px-4 py-3 text-[12px] whitespace-nowrap font-mono text-muted-foreground">
+                            {/* Fecha */}
+                            <td className={isEditing ? cellEdit : "px-3 py-2.5 font-mono text-muted-foreground whitespace-nowrap"}>
                               {isEditing ? (
-                                <Input
-                                  value={r.fecha || ''}
-                                  onChange={(e) => handleFieldChange(i, 'fecha', e.target.value)}
-                                  className="h-8 text-[12px]"
-                                  placeholder="DD/MM/YYYY"
-                                />
+                                <input type="date" value={toDateInput(r.fecha || '')} onChange={(e) => handleFieldChange(i, 'fecha', fromDateInput(e.target.value))} className={cn(inputEdit, "font-mono scheme-dark")} />
                               ) : (
                                 r.fecha || '--'
                               )}
                             </td>
-                            <td className="px-4 py-3 text-[13px] text-right font-mono tabular-nums">
+                            {/* Monto */}
+                            <td className={isEditing ? cellEdit : "px-3 py-2.5 font-mono tabular-nums text-right"}>
                               {isEditing ? (
-                                <Input
-                                  type="number"
-                                  step="0.01"
-                                  value={r.monto ?? ''}
-                                  onChange={(e) => handleFieldChange(i, 'monto', e.target.value)}
-                                  className="h-8 text-[12px]"
-                                />
+                                <input type="number" step="0.01" value={r.monto ?? ''} onChange={(e) => handleFieldChange(i, 'monto', e.target.value)} className={cn(inputEdit, "font-mono text-right w-24")} />
                               ) : (
                                 r.monto != null ? r.monto.toLocaleString() : '--'
                               )}
                             </td>
-                            <td className="px-4 py-3 text-[12px] font-mono">
+                            {/* Moneda */}
+                            <td className={isEditing ? cellEdit : "px-3 py-2.5 font-mono"}>
                               {isEditing ? (
-                                <select
-                                  value={r.moneda || ''}
-                                  onChange={(e) => handleFieldChange(i, 'moneda', e.target.value)}
-                                  className="h-8 rounded-md border border-input bg-background px-2 text-[12px]"
-                                >
+                                <select value={r.moneda || ''} onChange={(e) => handleFieldChange(i, 'moneda', e.target.value)} className={selectEdit}>
                                   <option value="">--</option>
-                                  <option value="UYU">UYU</option>
+                                  <option value="$">$</option>
                                   <option value="USD">USD</option>
                                 </select>
                               ) : (
                                 r.moneda || '--'
                               )}
                             </td>
-                            <td className="px-4 py-3 text-[12px]">
+                            {/* Categoría */}
+                            <td className={isEditing ? cellEdit : "px-3 py-2.5"}>
                               {isEditing ? (
-                                <select
-                                  value={r.categoria || ''}
-                                  onChange={(e) => handleFieldChange(i, 'categoria', e.target.value)}
-                                  className="h-8 rounded-md border border-input bg-background px-2 text-[12px]"
-                                >
+                                <select value={r.categoria || ''} onChange={(e) => handleFieldChange(i, 'categoria', e.target.value)} className={selectEdit}>
                                   <option value="">--</option>
                                   <option value="Maquinaria">Maquinaria</option>
                                   <option value="Equipos">Equipos</option>
@@ -545,10 +559,11 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                                 r.categoria || '--'
                               )}
                             </td>
-                            <td className="px-4 py-3">
-                              {completado 
-                                ? <Badge variant="secondary" className="bg-success/15 text-success border-transparent hover:bg-success/25 font-medium px-2 h-5">✓ Completo</Badge>
-                                : <Badge variant="secondary" className="bg-warning/15 text-warning border-transparent hover:bg-warning/25 font-medium px-2 h-5 text-[10px]">⚠ Incompleto</Badge>}
+                            {/* Estado */}
+                            <td className="px-3 py-2.5 whitespace-nowrap">
+                              {completado
+                                ? <Badge variant="secondary" className="bg-success/15 text-success border-transparent font-medium px-2 h-5 text-[10px]">✓ Completo</Badge>
+                                : <Badge variant="secondary" className="bg-warning/15 text-warning border-transparent font-medium px-2 h-5 text-[10px]">⚠ Incompleto</Badge>}
                             </td>
                           </tr>
                         )
@@ -558,7 +573,11 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                 </div>
               ) : (
                 <div className="border border-dashed border-border/60 rounded-lg py-12 text-center bg-card/5">
-                  <p className="text-[13px] text-muted-foreground">No hay facturas cargadas para este período.</p>
+                  {isEditing ? (
+                    <p className="text-[13px] text-muted-foreground">Usá <strong>+ Agregar</strong> para añadir la primera factura.</p>
+                  ) : (
+                    <p className="text-[13px] text-muted-foreground">No hay facturas cargadas. Usá <strong>Editar</strong> o <strong>Importar</strong>.</p>
+                  )}
                 </div>
               )}
             </div>
