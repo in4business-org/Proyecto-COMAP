@@ -18,7 +18,7 @@ const FIELDS = [
   { key: 'email', label: 'Email', span: 1 },
   { key: 'giro', label: 'Giro', span: 1 },
   { key: 'codigo_ciiu', label: 'Código CIIU', span: 1 },
-  { key: 'fecha_balance', label: 'Fecha de balance (dd/mm)', span: 1 },
+  { key: 'fecha_balance', label: 'Fecha de próximo balance', span: 1, type: 'date' },
   { key: 'tipo_contribuyente', label: 'Tipo de Contribuyente', span: 1 },
 ]
 
@@ -190,17 +190,18 @@ export default function EmpresaDetail() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 gap-y-5">
-            {FIELDS.map(({ key, label, span, readonly }) => (
+            {FIELDS.map(({ key, label, span, readonly, type }) => (
               <div key={key} className={span === 2 ? 'col-span-1 md:col-span-2' : ''}>
                 <label className="text-[11px] font-medium text-muted-foreground/80 mb-1.5 block">
                   {label}
                 </label>
                 <Input
+                  type={type || 'text'}
                   readOnly={readonly}
                   value={form[key] || ''}
                   onChange={(e) => setForm({ ...form, [key]: e.target.value })}
                   className={cn("h-9 text-[13px] bg-background border-border/50", readonly && "opacity-60 cursor-not-allowed text-muted-foreground")}
-                  placeholder={`Ingrese ${label.toLowerCase()}`}
+                  placeholder={type === 'date' ? undefined : `Ingrese ${label.toLowerCase()}`}
                 />
               </div>
             ))}

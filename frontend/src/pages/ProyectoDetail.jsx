@@ -176,7 +176,7 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
   const handleAddRow = () => {
     setEditedResults(current => [...current, {
       descripcion: '', numero_factura: '', proveedor: '', rut: '',
-      fecha: '', monto: null, moneda: '$', cantidad: 1,
+      fecha: '', monto: null, moneda: 'UYU', cantidad: 1,
       categoria: null, rut_receptor: '', razon_social_receptor: '',
       texto_extraido: false,
     }])
@@ -531,7 +531,7 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                               {isEditing ? (
                                 <select value={(r.moneda || '').trim()} onChange={(e) => handleFieldChange(i, 'moneda', e.target.value)} className={selectEdit}>
                                   <option value="">--</option>
-                                  <option value="$">$</option>
+                                  <option value="UYU">UYU</option>
                                   <option value="USD">USD</option>
                                 </select>
                               ) : (

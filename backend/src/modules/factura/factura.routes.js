@@ -176,17 +176,20 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/excel', async (
 
     let cotizacion_usd = meta.cotizacion_usd;
     let cotizacion_ui = meta.cotizacion_ui;
+    let fecha_cotizacion = meta.fecha_cotizacion || null;
     if (!cotizacion_usd || !cotizacion_ui) {
       try {
         const cot = await cotizacionService.getCotizacionMesAnterior();
         if (!cotizacion_usd) cotizacion_usd = cot.valor_usd;
         if (!cotizacion_ui) cotizacion_ui = cot.valor_ui;
+        if (!fecha_cotizacion) fecha_cotizacion = cot.fecha;
       } catch { }
     }
 
     await excelService.generarExcelComap(resultados, ruta, {
       cotizacion_usd,
       cotizacion_ui,
+      fecha_cotizacion,
       fecha_presentacion: meta.fecha_presentacion,
       fecha_balance: fechaBalance,
     });
@@ -216,7 +219,7 @@ router.get('/empresas/:empresaId/proyectos/:proyectoId/:periodo/template-importa
       { header: 'rut', key: 'rut', width: 14 },
       { header: 'fecha', key: 'fecha', width: 16 },
       { header: 'monto', key: 'monto', width: 14 },
-      { header: 'moneda ($ o USD)', key: 'moneda', width: 16 },
+      { header: 'moneda (UYU o USD)', key: 'moneda', width: 16 },
       { header: 'cantidad', key: 'cantidad', width: 10 },
       { header: 'categoria', key: 'categoria', width: 28 },
     ];

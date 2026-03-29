@@ -121,7 +121,7 @@ class ExcelService {
   }
 
   async generarExcelComap(facturas, rutaSalida, opciones = {}) {
-    const { cotizacion_usd, cotizacion_ui, sheetName } = opciones;
+    const { cotizacion_usd, cotizacion_ui, fecha_cotizacion, fecha_presentacion, fecha_balance, sheetName } = opciones;
 
     if (!fs.existsSync(TEMPLATE_CUADRO)) {
       throw new Error(`Template not found: ${TEMPLATE_CUADRO}`);
@@ -144,12 +144,24 @@ class ExcelService {
       throw new Error('No se encontró la hoja a procesar');
     }
 
+    if (fecha_cotizacion) {
+      ws.getCell(3, 3).value = normalizarFecha(fecha_cotizacion);
+    }
+
     if (cotizacion_usd) {
       ws.getCell(4, 3).value = parseFloat(cotizacion_usd);
     }
 
     if (cotizacion_ui) {
       ws.getCell(5, 3).value = parseFloat(cotizacion_ui);
+    }
+
+    if (fecha_balance) {
+      ws.getCell(6, 3).value = normalizarFecha(fecha_balance);
+    }
+
+    if (fecha_presentacion) {
+      ws.getCell(7, 3).value = normalizarFecha(fecha_presentacion);
     }
 
     const sortedFacturas = this.sortFacturasForInsert(facturas);
