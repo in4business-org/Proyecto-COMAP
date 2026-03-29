@@ -257,36 +257,29 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
   return (
     <div className="space-y-6 animate-fade-in">
       
-      {/* Grid de Períodos */}
-      <div className="bg-card/30 border border-border/50 rounded-xl p-5 shadow-sm">
-        <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-4">Períodos</h2>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-          {periodos.map(p => {
-            const isPresentacion = p === 'presentacion'
-            const nombre = isPresentacion ? meta?.anio_presentacion : p.replace('control_', '')
-            const label = isPresentacion ? 'Presentación' : 'Control'
-            const active = activePeriodo === p
-            
-            return (
-              <button
-                key={p}
-                onClick={() => setActivePeriodo(p)}
-                className={cn(
-                  "flex flex-col text-left p-4 rounded-xl border transition-all duration-200",
-                  active 
-                    ? "border-primary bg-primary/10 shadow-sm" 
-                    : "border-border/60 bg-card hover:border-primary/40 hover:bg-card/90 hover:-translate-y-0.5"
-                )}
-              >
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">{label}</span>
-                <span className="text-[15px] font-medium text-foreground mt-1">{nombre}</span>
-                <span className="text-[11px] text-muted-foreground/60 mt-3 font-mono tracking-tight">
-                  {periodoCounts[p] !== undefined ? `${periodoCounts[p]} facturas` : 'Cargando...'}
-                </span>
-              </button>
-            )
-          })}
-        </div>
+      {/* Pestañas de Períodos */}
+      <div className="flex items-center gap-0.5 border-b border-border/60">
+        {periodos.map(p => {
+          const isPresentacion = p === 'presentacion'
+          const anio = isPresentacion ? meta?.anio_presentacion : p.replace('control_', '')
+          const label = isPresentacion ? `Presentación ${anio}` : `Control ${anio}`
+          const active = activePeriodo === p
+
+          return (
+            <button
+              key={p}
+              onClick={() => setActivePeriodo(p)}
+              className={cn(
+                "px-4 py-2 text-[12px] font-medium rounded-t-md border border-b-0 transition-all duration-150 whitespace-nowrap",
+                active
+                  ? "border-border/60 bg-background text-foreground -mb-px"
+                  : "border-transparent text-muted-foreground hover:text-foreground hover:border-border/40 hover:bg-card/60"
+              )}
+            >
+              {label}
+            </button>
+          )
+        })}
       </div>
 
       <div className="grid grid-cols-1 gap-6">
