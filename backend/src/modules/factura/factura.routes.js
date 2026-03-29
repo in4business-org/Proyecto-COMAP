@@ -9,6 +9,7 @@ const proyectoService = require('../proyecto/proyecto.service');
 const empresaService = require('../empresa/empresa.service');
 const supabaseService = require('../../config/supabase.config');
 const prisma = require('../../config/prisma');
+const cotizacionService = require('../cotizacion/cotizacion.service');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
 const router = Router({ mergeParams: true });
@@ -172,9 +173,19 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/excel', async (
     const nombre = `cuadro_inversiones_${empresaId}_${periodo}_${timestamp}.xlsx`;
     const ruta = path.join(TMP_DIR, nombre);
 
+    let cotizacion_usd = meta.cotizacion_usd;
+    let cotizacion_ui = meta.cotizacion_ui;
+    if (!cotizacion_usd || !cotizacion_ui) {
+      try {
+        const cot = await cotizacionService.getCotizacionMesAnterior();
+        if (!cotizacion_usd) cotizacion_usd = cot.valor_usd;
+        if (!cotizacion_ui) cotizacion_ui = cot.valor_ui;
+      } catch { }
+    }
+
     await excelService.generarExcelComap(resultados, ruta, {
-      cotizacion_usd: meta.cotizacion_usd,
-      cotizacion_ui: meta.cotizacion_ui,
+      cotizacion_usd,
+      cotizacion_ui,
       fecha_presentacion: meta.fecha_presentacion,
       fecha_balance: fechaBalance,
     });
