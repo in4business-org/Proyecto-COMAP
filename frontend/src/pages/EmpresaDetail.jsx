@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Save, Plus, ArrowUpRight } from 'lucide-react'
+import { ArrowLeft, Save, Plus, ArrowUpRight, Settings } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -35,6 +35,9 @@ export default function EmpresaDetail() {
   const [projForm, setProjForm] = useState({ anio: new Date().getFullYear(), duracion: 5, fecha: '' })
 
   const [activeTab, setActiveTab] = useState('proyectos')
+  const [configProj, setConfigProj] = useState(null)
+  const [configForm, setConfigForm] = useState({})
+  const [savingConfig, setSavingConfig] = useState(false)
 
   useEffect(() => {
     empApi.get(empresaId).then((e) => { setEmpresa(e); setForm(e) }).catch(console.error).finally(() => setLoading(false))
@@ -57,6 +60,33 @@ export default function EmpresaDetail() {
       setProjForm({ anio: new Date().getFullYear(), duracion: 5, fecha: '' })
     } catch (err) { console.error(err) }
     finally { setCreating(false) }
+  }
+
+  const handleOpenConfig = (p) => {
+    setConfigForm({
+      fecha_presentacion: p.fecha_presentacion || '',
+      anio_presentacion: p.anio_presentacion || '',
+      duracion_seguimiento: p.duracion_seguimiento ?? 1,
+    })
+    setConfigProj(p)
+  }
+
+  const handleSaveConfig = async () => {
+    setSavingConfig(true)
+    try {
+      await projApi.updateMetadata(empresaId, configProj.id, {
+        fecha_presentacion: configForm.fecha_presentacion || null,
+        anio_presentacion: configForm.anio_presentacion ? Number(configForm.anio_presentacion) : null,
+        duracion_seguimiento: Number(configForm.duracion_seguimiento),
+      })
+      setProyectos(prev => prev.map(p =>
+        p.id === configProj.id
+          ? { ...p, ...configForm, anio_presentacion: Number(configForm.anio_presentacion), duracion_seguimiento: Number(configForm.duracion_seguimiento) }
+          : p
+      ))
+      setConfigProj(null)
+    } catch (err) { console.error(err) }
+    finally { setSavingConfig(false) }
   }
 
   if (loading) return <LoadingState />
@@ -160,11 +190,22 @@ export default function EmpresaDetail() {
                           {p.duracion_seguimiento} años
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <Link to={`/empresas/${empresaId}/proyectos/${p.id}`}>
-                            <Button size="sm" variant="secondary" className="h-[28px] px-3 text-[11px] font-medium gap-1 bg-background hover:bg-muted-foreground/10 text-foreground transition-all">
-                              Abrir <ArrowUpRight size={12} className="opacity-50" />
+                          <div className="flex items-center justify-end gap-1.5">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleOpenConfig(p)}
+                              className="h-[28px] px-2 text-[11px] text-muted-foreground hover:text-foreground gap-1"
+                            >
+                              <Settings size={12} />
+                              Configurar
                             </Button>
-                          </Link>
+                            <Link to={`/empresas/${empresaId}/proyectos/${p.id}`}>
+                              <Button size="sm" variant="secondary" className="h-[28px] px-3 text-[11px] font-medium gap-1 bg-background hover:bg-muted-foreground/10 text-foreground transition-all">
+                                Abrir <ArrowUpRight size={12} className="opacity-50" />
+                              </Button>
+                            </Link>
+                          </div>
                         </td>
                       </tr>
                     )
@@ -208,6 +249,58 @@ export default function EmpresaDetail() {
           </div>
         </section>
       )}
+
+      {/* Dialog configurar proyecto */}
+      <Dialog open={!!configProj} onClose={() => setConfigProj(null)}>
+        <DialogContent onClose={() => setConfigProj(null)}>
+          <DialogHeader>
+            <DialogTitle>Configuración del proyecto</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <label className="text-[12px] font-medium text-foreground">Fecha de presentación</label>
+              <Input
+                type="date"
+                value={configForm.fecha_presentacion || ''}
+                onChange={(e) => {
+                  const fecha = e.target.value
+                  const anio = fecha ? new Date(fecha).getFullYear() : configForm.anio_presentacion
+                  setConfigForm(f => ({ ...f, fecha_presentacion: fecha, anio_presentacion: anio || '' }))
+                }}
+                className="h-9 text-[13px]"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-[12px] font-medium text-foreground">Año de presentación</label>
+                <Input
+                  type="number"
+                  value={configForm.anio_presentacion || ''}
+                  onChange={(e) => setConfigForm(f => ({ ...f, anio_presentacion: e.target.value }))}
+                  className="h-9 text-[13px]"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[12px] font-medium text-foreground">Años de seguimiento</label>
+                <Input
+                  type="number"
+                  min="0"
+                  max="10"
+                  value={configForm.duracion_seguimiento ?? ''}
+                  onChange={(e) => setConfigForm(f => ({ ...f, duracion_seguimiento: e.target.value }))}
+                  className="h-9 text-[13px]"
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="mt-2">
+            <Button variant="ghost" onClick={() => setConfigProj(null)} size="sm" className="h-9 text-xs">Cancelar</Button>
+            <Button onClick={handleSaveConfig} disabled={savingConfig} size="sm" className="h-9 text-xs">
+              {savingConfig ? <><Spinner size={12} className="mr-1.5" /> Guardando...</> : 'Guardar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Dialog */}
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)}>
