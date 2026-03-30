@@ -103,7 +103,7 @@ export default function EmpresaDetail() {
           </Link>
           <div>
             <h1 className="text-xl font-medium truncate">{empresa?.nombre}</h1>
-            <p className="text-xs text-muted-foreground font-mono">{empresa?.rut}</p>
+            <p className="text-xs text-muted-foreground">{empresa?.rut}</p>
           </div>
         </div>
         <Button onClick={() => setDialogOpen(true)} size="sm" className="gap-1.5 text-xs">
@@ -166,10 +166,10 @@ export default function EmpresaDetail() {
                     const hasDocs = !!p.expediente
                     return (
                       <tr key={p.id} className="bg-card hover:bg-accent/40 transition-colors group">
-                        <td className="px-4 py-3 text-[13px] font-mono text-muted-foreground/80 whitespace-nowrap">
+                        <td className="px-4 py-3 text-[13px] text-muted-foreground/80 whitespace-nowrap">
                           {p.fecha_creacion ? new Date(p.fecha_creacion).toLocaleDateString() : '--'}
                         </td>
-                        <td className="px-4 py-3 text-[13px] font-mono text-muted-foreground/80 whitespace-nowrap">
+                        <td className="px-4 py-3 text-[13px] text-muted-foreground/80 whitespace-nowrap">
                           {p.fecha_presentacion || '--'}
                         </td>
                         <td className="px-4 py-3 text-[13px] whitespace-nowrap">
@@ -183,10 +183,10 @@ export default function EmpresaDetail() {
                             </Badge>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-[13px] font-mono text-muted-foreground whitespace-nowrap">
+                        <td className="px-4 py-3 text-[13px] text-muted-foreground whitespace-nowrap">
                           {p.anio_presentacion}
                         </td>
-                        <td className="px-4 py-3 text-[13px] font-mono text-muted-foreground whitespace-nowrap">
+                        <td className="px-4 py-3 text-[13px] text-muted-foreground whitespace-nowrap">
                           {p.duracion_seguimiento} años
                         </td>
                         <td className="px-4 py-3 text-right">

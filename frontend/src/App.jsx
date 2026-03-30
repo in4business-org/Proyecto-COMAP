@@ -8,6 +8,9 @@ import Dashboard from './pages/Dashboard'
 import Empresas from './pages/Empresas'
 import EmpresaDetail from './pages/EmpresaDetail'
 import ProyectoDetail from './pages/ProyectoDetail'
+import UserSettings from './pages/UserSettings'
+import OrgSettings from './pages/OrgSettings'
+import InboxPage from './pages/Inbox'
 
 export default function App() {
   return (
@@ -24,6 +27,9 @@ export default function App() {
               <Route path="/empresas" element={<Empresas />} />
               <Route path="/empresas/:empresaId" element={<EmpresaDetail />} />
               <Route path="/empresas/:empresaId/proyectos/:proyectoId" element={<ProyectoDetail />} />
+              <Route path="/inbox" element={<InboxPage />} />
+              <Route path="/settings/user" element={<UserSettings />} />
+              <Route path="/settings/organization" element={<OrgSettings />} />
             </Route>
           </Route>
         </Routes>

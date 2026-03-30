@@ -3,7 +3,8 @@ import { useParams, Link } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import {
   ArrowLeft, Upload, Download, FileText,
-  CheckSquare, Check, FolderOpen, Plus, RefreshCw, X
+  CheckSquare, Check, FolderOpen, Plus, RefreshCw, X,
+  ChevronLeft, ChevronRight, CalendarDays,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -52,13 +53,164 @@ function CellDropdown({ id, value, options, onChange, open, onOpen }) {
                 type="button"
                 onClick={() => { onChange(v); onOpen(null) }}
                 className={cn(
-                  "block text-left px-3 py-1.5 text-[12px] whitespace-nowrap hover:bg-accent transition-colors",
+                  "w-full block text-left px-3 py-1.5 text-[12px] whitespace-nowrap hover:bg-accent transition-colors",
                   value === v ? "text-foreground font-medium" : "text-muted-foreground"
                 )}
               >
                 {l}
               </button>
             ))}
+          </div>
+        </>,
+        document.body
+      )}
+    </div>
+  )
+}
+
+/* ─── CellDatePicker ──────────────────────────────── */
+
+function CellDatePicker({ id, value, onChange, open, onOpen }) {
+  const btnRef = useRef(null)
+  const [pos, setPos] = useState({ top: 0, left: 0 })
+
+  // value is DD/MM/YYYY
+  const parseValue = (v) => {
+    if (!v) return null
+    const [d, m, y] = v.split('/')
+    return d && m && y ? new Date(+y, +m - 1, +d) : null
+  }
+
+  const selectedDate = parseValue(value)
+
+  const [viewDate, setViewDate] = useState(() => {
+    const s = parseValue(value)
+    return s ? new Date(s.getFullYear(), s.getMonth(), 1) : new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+  })
+
+  const handleOpen = () => {
+    if (!open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect()
+      setPos({ top: rect.bottom + 4, left: rect.left })
+      const s = parseValue(value)
+      if (s) setViewDate(new Date(s.getFullYear(), s.getMonth(), 1))
+    }
+    onOpen(open ? null : id)
+  }
+
+  const year = viewDate.getFullYear()
+  const month = viewDate.getMonth()
+
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  // Build days grid (week starts Monday)
+  const days = []
+  const firstDow = new Date(year, month, 1).getDay()
+  const startPad = firstDow === 0 ? 6 : firstDow - 1
+  for (let i = startPad - 1; i >= 0; i--) days.push({ date: new Date(year, month, -i), current: false })
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  for (let d = 1; d <= daysInMonth; d++) days.push({ date: new Date(year, month, d), current: true })
+  while (days.length % 7 !== 0) days.push({ date: new Date(year, month + 1, days.length - daysInMonth - startPad + 1), current: false })
+
+  const handleDay = (date) => {
+    const d = String(date.getDate()).padStart(2, '0')
+    const m = String(date.getMonth() + 1).padStart(2, '0')
+    onChange(`${d}/${m}/${date.getFullYear()}`)
+    onOpen(null)
+  }
+
+  const monthLabel = new Intl.DateTimeFormat('es-UY', { month: 'long', year: 'numeric' }).format(viewDate)
+
+  return (
+    <div>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={handleOpen}
+        className="flex items-center justify-between gap-1.5 w-full px-2 h-full min-h-[34px] bg-transparent hover:bg-primary/5 text-[12px] text-foreground transition-colors"
+      >
+        <span className="truncate">{value || '--'}</span>
+        <CalendarDays size={11} className="text-muted-foreground/60 shrink-0" />
+      </button>
+
+      {open && createPortal(
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 100 }} onClick={() => onOpen(null)} />
+          <div
+            style={{ position: 'absolute', top: pos.top + window.scrollY, left: pos.left + window.scrollX, zIndex: 101 }}
+            className="bg-popover border border-border rounded-lg shadow-lg p-3 w-60"
+          >
+            {/* Month navigation */}
+            <div className="flex items-center justify-between mb-2.5">
+              <button
+                type="button"
+                onClick={() => setViewDate(new Date(year, month - 1, 1))}
+                className="p-1 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <ChevronLeft size={13} />
+              </button>
+              <span className="text-[12px] font-medium text-foreground capitalize">{monthLabel}</span>
+              <button
+                type="button"
+                onClick={() => setViewDate(new Date(year, month + 1, 1))}
+                className="p-1 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <ChevronRight size={13} />
+              </button>
+            </div>
+
+            {/* Weekday labels */}
+            <div className="grid grid-cols-7 mb-1">
+              {['L', 'M', 'X', 'J', 'V', 'S', 'D'].map(d => (
+                <div key={d} className="text-center text-[10px] font-medium text-muted-foreground/40 py-0.5">{d}</div>
+              ))}
+            </div>
+
+            {/* Days */}
+            <div className="grid grid-cols-7 gap-y-0.5">
+              {days.map(({ date, current }, i) => {
+                const isSel = selectedDate && date.toDateString() === selectedDate.toDateString()
+                const isToday = date.toDateString() === today.toDateString()
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => handleDay(date)}
+                    className={cn(
+                      'text-center text-[12px] py-1 rounded-md transition-colors',
+                      isSel
+                        ? 'bg-primary text-primary-foreground font-medium'
+                        : isToday
+                          ? 'border border-primary/30 text-primary font-medium hover:bg-accent'
+                          : current
+                            ? 'text-foreground hover:bg-accent'
+                            : 'text-muted-foreground/25 hover:bg-accent/40',
+                    )}
+                  >
+                    {date.getDate()}
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Hoy shortcut */}
+            <div className="mt-2 pt-2 border-t border-border flex justify-between items-center">
+              <button
+                type="button"
+                onClick={() => { onChange(''); onOpen(null) }}
+                className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Borrar
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDay(today)}
+                className="text-[11px] text-primary hover:text-primary/70 transition-colors font-medium"
+              >
+                Hoy
+              </button>
+            </div>
           </div>
         </>,
         document.body
@@ -748,8 +900,7 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                         const cellEdit = "p-0 border-r border-b border-border/25 last:border-r-0"
                         const inputEdit = "w-full min-h-[34px] bg-transparent text-foreground px-2 py-1 text-[12px] outline-none focus:bg-primary/5 placeholder:text-muted-foreground/40"
                         const selectEdit = "w-full min-h-[34px] bg-background text-foreground px-2 py-1 text-[12px] outline-none focus:bg-primary/5 cursor-pointer"
-                        const toDateInput = (v) => { if (!v) return ''; const [d, m, y] = v.split('/'); return d && m && y ? `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}` : '' }
-                        const fromDateInput = (v) => { if (!v) return ''; const [y, m, d] = v.split('-'); return d && m && y ? `${d}/${m}/${y}` : '' }
+
                         return (
                           <tr key={i} className={cn(isEditing ? "last:border-b-0" : "bg-card hover:bg-accent/30 transition-colors")}>
                             {isEditing && (
@@ -788,7 +939,13 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                             {/* Fecha */}
                             <td className={isEditing ? cellEdit : "px-3 py-2.5 whitespace-nowrap"}>
                               {isEditing ? (
-                                <input type="date" value={toDateInput(r.fecha || '')} onChange={(e) => handleFieldChange(i, 'fecha', fromDateInput(e.target.value))} className={cn(inputEdit, "dark:scheme-dark")} />
+                                <CellDatePicker
+                                  id={`fecha-${i}`}
+                                  value={r.fecha || ''}
+                                  onChange={(v) => handleFieldChange(i, 'fecha', v)}
+                                  open={openDropdown === `fecha-${i}`}
+                                  onOpen={setOpenDropdown}
+                                />
                               ) : (
                                 r.fecha || '--'
                               )}
