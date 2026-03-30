@@ -76,6 +76,7 @@ model Factura {
   rut_receptor          String?
   razon_social_receptor String?
   tipo_comprobante      String?
+  fecha_ejecucion       String?
   texto_extraido        Boolean   @default(false)
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt

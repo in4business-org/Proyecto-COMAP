@@ -30,6 +30,21 @@ function getMimeType(filename) {
   return mimeMap[ext] || 'application/pdf';
 }
 
+/**
+ * Calcula fecha_ejecucion por defecto:
+ * - Factura: misma fecha del comprobante (ya ejecutada, antes de presentación)
+ * - Presupuesto / null: fecha_presentacion + 1 día (año de presentación)
+ */
+function calcularFechaEjecucion(tipoComprobante, fechaFactura, fechaPresentacion) {
+  if (tipoComprobante === 'Factura') return fechaFactura || null;
+  if (fechaPresentacion) {
+    const d = new Date(fechaPresentacion);
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().split('T')[0];
+  }
+  return null;
+}
+
 /** Save results to database */
 async function guardarResultadosDB(proyectoId, periodo, resultados) {
   const dataToInsert = (resultados || []).map(r => ({
@@ -48,6 +63,7 @@ async function guardarResultadosDB(proyectoId, periodo, resultados) {
     rut_receptor: r.rut_receptor || null,
     razon_social_receptor: r.razon_social_receptor || null,
     tipo_comprobante: r.tipo_comprobante || null,
+    fecha_ejecucion: r.fecha_ejecucion || null,
     texto_extraido: Boolean(r.texto_extraido)
   }));
 
@@ -106,6 +122,7 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/subir-y-procesa
     const nuevos = await facturaService.analizarMultipleArchivos(archivosData);
 
     if (nuevos.length > 0) {
+      const meta = await proyectoService.getMetadata(empresaId, proyectoId) || {};
       await prisma.factura.createMany({
         data: nuevos.map(r => ({
           proyectoId,
@@ -123,6 +140,7 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/subir-y-procesa
           rut_receptor: r.rut_receptor || null,
           razon_social_receptor: r.razon_social_receptor || null,
           tipo_comprobante: r.tipo_comprobante || null,
+          fecha_ejecucion: calcularFechaEjecucion(r.tipo_comprobante, r.fecha, meta.fecha_presentacion),
           texto_extraido: Boolean(r.texto_extraido),
         })),
       });
@@ -216,7 +234,12 @@ router.get('/empresas/:empresaId/proyectos/:proyectoId/:periodo/analizar', async
     }
     
     const resultados = await facturaService.analizarMultipleArchivos(archivosData);
-    await guardarResultadosDB(proyectoId, periodo, resultados);
+    const meta = await proyectoService.getMetadata(empresaId, proyectoId) || {};
+    const resultadosConFecha = resultados.map(r => ({
+      ...r,
+      fecha_ejecucion: calcularFechaEjecucion(r.tipo_comprobante, r.fecha, meta.fecha_presentacion),
+    }));
+    await guardarResultadosDB(proyectoId, periodo, resultadosConFecha);
     res.json(await leerResultadosDB(proyectoId, periodo));
   } catch (e) {
     console.error(e);
@@ -305,6 +328,7 @@ router.get('/empresas/:empresaId/proyectos/:proyectoId/:periodo/template-importa
       { header: 'cantidad', key: 'cantidad', width: 10 },
       { header: 'categoria', key: 'categoria', width: 28 },
       { header: 'tipo_comprobante (Factura o Presupuesto)', key: 'tipo_comprobante', width: 32 },
+      { header: 'fecha_ejecucion (opcional, YYYY-MM-DD)', key: 'fecha_ejecucion', width: 30 },
     ];
     ws.getColumn(5).numFmt = 'DD/MM/YYYY';
     ws.getRow(1).font = { bold: true };
@@ -323,7 +347,7 @@ router.get('/empresas/:empresaId/proyectos/:proyectoId/:periodo/template-importa
 // POST  import facturas from Excel
 router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/importar', upload.single('file'), async (req, res) => {
   try {
-    const { proyectoId, periodo } = req.params;
+    const { empresaId, proyectoId, periodo } = req.params;
     if (!req.file?.buffer) return res.status(400).json({ error: 'No se recibió archivo' });
 
     const ExcelJS = require('exceljs');
@@ -350,18 +374,64 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/importar', uplo
       const cantidad = cantidadRaw != null && cantidadRaw !== '' ? parseInt(cantidadRaw) : 1;
       const categoria = row.getCell(9).text?.trim() || null;
       const tipo_comprobante = row.getCell(10).text?.trim() || null;
+      const fechaEjecucionRaw = row.getCell(11).value;
+      const fecha_ejecucion_excel = fechaEjecucionRaw instanceof Date
+        ? formatearFecha(fechaEjecucionRaw)
+        : (typeof fechaEjecucionRaw === 'string' ? fechaEjecucionRaw.trim() || null : null);
 
       if (!descripcion && !numero_factura && !proveedor && !monto) return;
 
       nuevas.push({
         descripcion, numero_factura, proveedor, rut, fecha,
-        monto, moneda, cantidad, categoria, tipo_comprobante, texto_extraido: false,
+        monto, moneda, cantidad, categoria, tipo_comprobante,
+        fecha_ejecucion: fecha_ejecucion_excel,
+        texto_extraido: false,
       });
     });
 
+    const meta = await proyectoService.getMetadata(empresaId, proyectoId) || {};
+    const nuevasConFecha = nuevas.map(r => ({
+      ...r,
+      fecha_ejecucion: r.fecha_ejecucion || calcularFechaEjecucion(r.tipo_comprobante, r.fecha, meta.fecha_presentacion),
+    }));
+
     const existentes = await leerResultadosDB(proyectoId, periodo);
-    await guardarResultadosDB(proyectoId, periodo, [...existentes, ...nuevas]);
+    await guardarResultadosDB(proyectoId, periodo, [...existentes, ...nuevasConFecha]);
     const updated = await leerResultadosDB(proyectoId, periodo);
+    res.json(updated);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// PATCH  update execution year of a single factura
+router.patch('/empresas/:empresaId/proyectos/:proyectoId/facturas/:facturaId/fecha-ejecucion', async (req, res) => {
+  try {
+    const { proyectoId, facturaId } = req.params;
+    const { anio } = req.body;
+
+    const anioInt = parseInt(anio);
+    if (!anio || isNaN(anioInt) || anioInt < 2000 || anioInt > 2100) {
+      return res.status(400).json({ error: 'anio debe ser un año válido' });
+    }
+
+    const factura = await prisma.factura.findFirst({ where: { id: facturaId, proyectoId } });
+    if (!factura) return res.status(404).json({ error: 'Factura no encontrada' });
+
+    // Conserva mes y día existentes, solo cambia el año
+    let nuevaFechaEjecucion;
+    if (factura.fecha_ejecucion) {
+      const partes = factura.fecha_ejecucion.split('-');
+      nuevaFechaEjecucion = `${anioInt}-${partes[1] || '01'}-${partes[2] || '01'}`;
+    } else {
+      nuevaFechaEjecucion = `${anioInt}-01-01`;
+    }
+
+    const updated = await prisma.factura.update({
+      where: { id: facturaId },
+      data: { fecha_ejecucion: nuevaFechaEjecucion },
+    });
     res.json(updated);
   } catch (e) {
     console.error(e);
@@ -477,10 +547,16 @@ router.post('/simple/asociar', async (req, res) => {
       }
     }
 
+    const meta = await proyectoService.getMetadata(empresaId, proyectoId) || {};
+    const simplesConFecha = resultadosSimples.map(r => ({
+      ...r,
+      fecha_ejecucion: r.fecha_ejecucion || calcularFechaEjecucion(r.tipo_comprobante, r.fecha, meta.fecha_presentacion),
+    }));
+
     let resultadosDestino = await leerResultadosDB(proyectoId, periodo) || [];
     const destinoMap = new Map(resultadosDestino.map(r => [r.archivo, r]));
 
-    for (const r of resultadosSimples) {
+    for (const r of simplesConFecha) {
       destinoMap.set(r.archivo, r);
     }
 
