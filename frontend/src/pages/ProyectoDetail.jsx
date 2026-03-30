@@ -1,15 +1,71 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import { createPortal } from 'react-dom'
 import {
-  ArrowLeft, Upload, FileSearch, Download, FileText,
-  CheckSquare, Calculator, Check, FolderOpen
+  ArrowLeft, Upload, Download, FileText,
+  CheckSquare, Check, FolderOpen, Plus, RefreshCw, X
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { LoadingState, EmptyState, Spinner } from '@/components/ui/loading'
 import { cn } from '@/lib/utils'
-import { empresas as empApi, proyectos as projApi, facturas as factApi, checklist as checkApi, simulador as simApi } from '@/lib/api'
+import { empresas as empApi, proyectos as projApi, facturas as factApi, checklist as checkApi, cotizaciones as cotApi } from '@/lib/api'
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+
+/* ─── CellDropdown ────────────────────────────────── */
+
+function CellDropdown({ id, value, options, onChange, open, onOpen }) {
+  const btnRef = useRef(null)
+  const [pos, setPos] = useState({ top: 0, left: 0 })
+  const label = options.find(o => o.v === value)?.l ?? '--'
+
+  const handleOpen = () => {
+    if (!open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect()
+      setPos({ top: rect.bottom + 4, left: rect.left })
+    }
+    onOpen(open ? null : id)
+  }
+
+  return (
+    <div>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={handleOpen}
+        className="flex items-center justify-between gap-1.5 w-full px-2 h-full min-h-[34px] bg-transparent hover:bg-primary/5 text-[12px] text-foreground transition-colors"
+      >
+        <span className="truncate">{label}</span>
+        <span className="text-[9px] text-muted-foreground shrink-0">▼</span>
+      </button>
+      {open && createPortal(
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 100 }} onClick={() => onOpen(null)} />
+          <div
+            style={{ position: 'absolute', top: pos.top + window.scrollY, left: pos.left + window.scrollX, zIndex: 101, width: 'max-content', minWidth: '120px' }}
+            className="bg-popover border border-border rounded-lg shadow-lg py-1"
+          >
+            {options.map(({ v, l }) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => { onChange(v); onOpen(null) }}
+                className={cn(
+                  "block text-left px-3 py-1.5 text-[12px] whitespace-nowrap hover:bg-accent transition-colors",
+                  value === v ? "text-foreground font-medium" : "text-muted-foreground"
+                )}
+              >
+                {l}
+              </button>
+            ))}
+          </div>
+        </>,
+        document.body
+      )}
+    </div>
+  )
+}
 
 /* ─── Facturas ────────────────────────────────────── */
 
@@ -17,8 +73,8 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
   const [activePeriodo, setActivePeriodo] = useState('presentacion')
   const [files, setFiles] = useState([])
   const [uploading, setUploading] = useState(false)
-  const [analyzing, setAnalyzing] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [importing, setImporting] = useState(false)
   const [results, setResults] = useState(null)
   const [loadingResults, setLoadingResults] = useState(true)
   const [uploadMsg, setUploadMsg] = useState('')
@@ -27,6 +83,10 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
   const [editedResults, setEditedResults] = useState([])
   const [savingEdit, setSavingEdit] = useState(false)
   const [selectedRows, setSelectedRows] = useState([])
+  const [reprocesando, setReprocesando] = useState(false)
+  const [openDropdown, setOpenDropdown] = useState(null)
+  const [cotizacion, setCotizacion] = useState(null)
+  const [loadingCotizacion, setLoadingCotizacion] = useState(true)
 
   // Cache to prevent loading spinners when switching back and forth
   const [resultsCache, setResultsCache] = useState({})
@@ -34,7 +94,15 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
   useEffect(() => {
     setEditedResults(results || [])
   }, [results])
-  
+
+  // Load cotización del mes anterior a la fecha de presentación (o hoy si no está definida)
+  useEffect(() => {
+    cotApi.getMesAnterior(meta?.fecha_presentacion || null)
+      .then(setCotizacion)
+      .catch(() => setCotizacion(null))
+      .finally(() => setLoadingCotizacion(false))
+  }, [meta?.fecha_presentacion])
+
   // Load persisted results for current periodo
   useEffect(() => {
     // Show cached immediately if we have it
@@ -150,39 +218,88 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
     setSelectedRows([])
   }
 
-  const handleUpload = async () => {
-    if (!files.length) return
-    setUploading(true)
-    setUploadMsg('')
+  const handleReprocesarSeleccionadas = async () => {
+    const archivos = selectedRows
+      .map(i => editedResults[i]?.archivo)
+      .filter(Boolean)
+    if (!archivos.length) return
+    setReprocesando(true)
     try {
-      const res = await factApi.upload(empresaId, proyectoId, activePeriodo, files)
-      setUploadMsg(`${res.total} archivo(s) subidos`)
-      setFiles([])
-      document.getElementById('factura-upload').value = ''
-      
-      // Auto analyze when uploading completes, but only show analyzing state, not full load
-      setAnalyzing(true)
-      const newResults = await factApi.analyze(empresaId, proyectoId, activePeriodo)
-      setResults(newResults)
-      setPeriodoCounts(prev => ({ ...prev, [activePeriodo]: newResults?.length || 0 }))
-      
-    } catch (err) { console.error(err) }
-    finally { 
-      setUploading(false)
-      setAnalyzing(false)
+      const nuevos = await factApi.reprocesar(empresaId, proyectoId, activePeriodo, archivos)
+      setEditedResults(current => [
+        ...current.filter((_, i) => !selectedRows.includes(i)),
+        ...nuevos,
+      ])
+      setSelectedRows([])
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setReprocesando(false)
     }
   }
 
-  const handleAnalyze = async () => {
-    setAnalyzing(true)
-    try { 
-      const newResults = await factApi.analyze(empresaId, proyectoId, activePeriodo)
-      setResults(newResults)
-      setResultsCache(prev => ({ ...prev, [activePeriodo]: newResults }))
-      setPeriodoCounts(prev => ({ ...prev, [activePeriodo]: newResults?.length || 0 }))
+  const handleUpload = async () => {
+    if (!files.length) return
+    setUploadMsg('')
+    const isExcel = files.length === 1 && files[0].name.toLowerCase().endsWith('.xlsx')
+    if (isExcel) {
+      await handleImportMasivo(files[0])
+      setFiles([])
+      document.getElementById('factura-upload').value = ''
+      return
     }
-    catch (err) { console.error(err) }
-    finally { setAnalyzing(false) }
+    setUploading(true)
+    try {
+      const prevCount = results?.length || 0
+      const updated = await factApi.uploadAndProcess(empresaId, proyectoId, activePeriodo, files)
+      setResults(updated)
+      setResultsCache(prev => ({ ...prev, [activePeriodo]: updated }))
+      setPeriodoCounts(prev => ({ ...prev, [activePeriodo]: updated?.length || 0 }))
+      const nuevas = (updated?.length || 0) - prevCount
+      setUploadMsg(nuevas > 0 ? `${nuevas} factura(s) procesada(s)` : 'Archivos procesados sin nuevas facturas detectadas')
+      setFiles([])
+      document.getElementById('factura-upload').value = ''
+    } catch (err) {
+      console.error(err)
+      setUploadMsg('Error al procesar los archivos')
+    }
+    finally { setUploading(false) }
+  }
+
+  const handleAddRow = () => {
+    setEditedResults(current => [...current, {
+      descripcion: '', numero_factura: '', proveedor: '', rut: '',
+      fecha: '', monto: null, moneda: 'UYU', cantidad: 1,
+      categoria: null, tipo_comprobante: 'Factura', rut_receptor: '', razon_social_receptor: '',
+      texto_extraido: false,
+    }])
+  }
+
+  const handleDownloadTemplate = async () => {
+    try {
+      const blob = await factApi.downloadTemplate(empresaId, proyectoId, activePeriodo)
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = 'template_facturas.xlsx'
+      a.click()
+    } catch (err) { console.error(err) }
+  }
+
+  const handleImportMasivo = async (file) => {
+    if (!file) return
+    setImporting(true)
+    try {
+      const updated = await factApi.importar(empresaId, proyectoId, activePeriodo, file)
+      setResults(updated)
+      setResultsCache(prev => ({ ...prev, [activePeriodo]: updated }))
+      setPeriodoCounts(prev => ({ ...prev, [activePeriodo]: updated?.length || 0 }))
+      setUploadMsg('Importación masiva completada')
+    } catch (err) {
+      console.error(err)
+      setUploadMsg('Error al importar el archivo')
+    } finally {
+      setImporting(false)
+    }
   }
 
   const handleExport = async () => {
@@ -197,46 +314,199 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
     finally { setExporting(false) }
   }
   
-  // Calculate stats
-  const totalFacturas = results?.length || 0
-  const completas = results?.filter(f => f.proveedor && f.fecha && f.monto).length || 0
-  const conMonto = results?.filter(f => f.monto).length || 0
-  const requierenOcr = results?.filter(f => !f.texto_extraido).length || 0
+  const [sortField, setSortField] = useState('numero_factura')
+  const [sortDir, setSortDir] = useState('desc')
+  const [sortOpen, setSortOpen] = useState(false)
+
+  const toUI = useCallback((monto, moneda) => {
+    if (monto == null || !cotizacion) return null
+    const pesos = moneda === 'USD' ? monto * cotizacion.valor_usd : monto
+    return pesos / cotizacion.valor_ui
+  }, [cotizacion])
+
+  const fmtUI = (n) => n == null ? '--' : `UI ${Math.round(n).toLocaleString('es-UY')}`
+  const fmtPct = (n, total) => total > 0 ? `${((n / total) * 100).toFixed(1)}%` : '--'
+
+  const kpis = useMemo(() => {
+    if (!results?.length || !cotizacion) return null
+    const withMonto = results.filter(f => f.monto != null)
+    if (!withMonto.length) return null
+
+    const totalUI = withMonto.reduce((s, f) => s + (toUI(f.monto, f.moneda) ?? 0), 0)
+    const facturaUI = withMonto.filter(f => f.tipo_comprobante === 'Factura')
+      .reduce((s, f) => s + (toUI(f.monto, f.moneda) ?? 0), 0)
+    const presupuestoUI = withMonto.filter(f => f.tipo_comprobante === 'Presupuesto')
+      .reduce((s, f) => s + (toUI(f.monto, f.moneda) ?? 0), 0)
+
+    const catMap = {}
+    withMonto.forEach(f => {
+      const cat = f.categoria || 'Sin categoría'
+      catMap[cat] = (catMap[cat] || 0) + (toUI(f.monto, f.moneda) ?? 0)
+    })
+    const porCategoria = Object.entries(catMap)
+      .sort((a, b) => b[1] - a[1])
+      .map(([cat, ui]) => ({ cat, ui }))
+
+    const mesMap = {}
+    withMonto.forEach(f => {
+      const parts = (f.fecha || '').split('/')
+      if (parts.length === 3) {
+        const key = `${parts[2]}-${parts[1]}`
+        if (!mesMap[key]) mesMap[key] = { mes: key, factura: 0, presupuesto: 0 }
+        const ui = toUI(f.monto, f.moneda) ?? 0
+        if (f.tipo_comprobante === 'Factura') mesMap[key].factura += ui
+        else mesMap[key].presupuesto += ui
+      }
+    })
+    const porMes = Object.values(mesMap).sort((a, b) => a.mes.localeCompare(b.mes))
+      .map(d => ({
+        ...d,
+        label: (() => {
+          const [y, m] = d.mes.split('-')
+          const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+          return `${meses[parseInt(m, 10) - 1]} ${y.slice(2)}`
+        })()
+      }))
+
+    return { totalUI, facturaUI, presupuestoUI, porCategoria, porMes, total: results.length, conMonto: withMonto.length }
+  }, [results, cotizacion, toUI])
+
+  const SORT_OPTIONS = [
+    { label: 'N° Comprobante', field: 'numero_factura' },
+    { label: 'Proveedor', field: 'proveedor' },
+    { label: 'Fecha', field: 'fecha' },
+    { label: 'Monto', field: 'monto' },
+    { label: 'Moneda', field: 'moneda' },
+    { label: 'Categoría', field: 'categoria' },
+    { label: 'Tipo', field: 'tipo_comprobante' },
+    { label: 'Actualización', field: 'updatedAt' },
+  ]
+
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortField(field)
+      setSortDir('asc')
+    }
+  }
+
+  const sortedResults = (arr) => {
+    if (!sortField || !arr) return arr
+    return [...arr].sort((a, b) => {
+      const av = a[sortField] ?? ''
+      const bv = b[sortField] ?? ''
+      const cmp = typeof av === 'number' && typeof bv === 'number'
+        ? av - bv
+        : String(av).localeCompare(String(bv))
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+  }
 
   return (
     <div className="space-y-6 animate-fade-in">
       
-      {/* Grid de Períodos */}
-      <div className="bg-card/30 border border-border/50 rounded-xl p-5 shadow-sm">
-        <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-4">Períodos</h2>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-          {periodos.map(p => {
-            const isPresentacion = p === 'presentacion'
-            const nombre = isPresentacion ? meta?.anio_presentacion : p.replace('control_', '')
-            const label = isPresentacion ? 'Presentación' : 'Control'
-            const active = activePeriodo === p
-            
-            return (
-              <button
-                key={p}
-                onClick={() => setActivePeriodo(p)}
-                className={cn(
-                  "flex flex-col text-left p-4 rounded-xl border transition-all duration-200",
-                  active 
-                    ? "border-primary bg-primary/10 shadow-sm" 
-                    : "border-border/60 bg-card hover:border-primary/40 hover:bg-card/90 hover:-translate-y-0.5"
-                )}
-              >
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">{label}</span>
-                <span className="text-[15px] font-medium text-foreground mt-1">{nombre}</span>
-                <span className="text-[11px] text-muted-foreground/60 mt-3 font-mono tracking-tight">
-                  {periodoCounts[p] !== undefined ? `${periodoCounts[p]} facturas` : 'Cargando...'}
-                </span>
-              </button>
-            )
-          })}
-        </div>
+      {/* Pestañas de Períodos */}
+      <div className="flex items-center gap-0.5 border-b border-border/60">
+        {periodos.map(p => {
+          const isPresentacion = p === 'presentacion'
+          const anio = isPresentacion ? meta?.anio_presentacion : p.replace('control_', '')
+          const label = isPresentacion ? `Presentación ${anio}` : `Control ${anio}`
+          const active = activePeriodo === p
+
+          return (
+            <button
+              key={p}
+              onClick={() => setActivePeriodo(p)}
+              className={cn(
+                "px-4 py-2 text-[12px] font-medium rounded-t-md border border-b-0 transition-all duration-150 whitespace-nowrap",
+                active
+                  ? "border-border/60 bg-background text-foreground -mb-px"
+                  : "border-transparent text-muted-foreground hover:text-foreground hover:border-border/40 hover:bg-card/60"
+              )}
+            >
+              {label}
+            </button>
+          )
+        })}
       </div>
+
+      {/* ── KPI Panel ─────────────────────────────────── */}
+      {kpis && (
+        <div className="bg-card/30 border border-border/50 rounded-xl p-5 shadow-sm space-y-5">
+          <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+            Resumen · <span className="normal-case font-normal">{activePeriodo === 'presentacion' ? 'Presentación' : `Control ${activePeriodo.replace('control_', '')}`}</span>
+          </h2>
+
+          {/* Tarjetas de resumen */}
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { label: 'Total inversión', val: fmtUI(kpis.totalUI), sub: `${kpis.total} comprobante${kpis.total !== 1 ? 's' : ''}` },
+              { label: 'Facturas', val: fmtUI(kpis.facturaUI), sub: fmtPct(kpis.facturaUI, kpis.totalUI) + ' del total', color: 'text-primary' },
+              { label: 'Presupuestos', val: fmtUI(kpis.presupuestoUI), sub: fmtPct(kpis.presupuestoUI, kpis.totalUI) + ' del total', color: 'text-warning' },
+            ].map(({ label, val, sub, color }) => (
+              <div key={label} className="bg-card border border-border/60 rounded-lg p-3">
+                <p className={cn('text-[14px] font-medium truncate', color || 'text-foreground')}>{val}</p>
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mt-1">{label}</p>
+                {sub && <p className="text-[11px] text-muted-foreground/70 mt-0.5">{sub}</p>}
+              </div>
+            ))}
+          </div>
+
+          {/* Gráfico de inversión mensual */}
+          {kpis.porMes.length > 0 && (
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-2">Inversión por mes (UI)</p>
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart data={kpis.porMes} margin={{ top: 4, right: 8, left: 8, bottom: 0 }} barSize={18}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.08} />
+                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
+                  <YAxis
+                    tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
+                    axisLine={false}
+                    tickLine={false}
+                    tickFormatter={(v) => v >= 1000 ? `${Math.round(v / 1000)}k` : Math.round(v)}
+                    width={40}
+                  />
+                  <Tooltip
+                    formatter={(value, name) => [fmtUI(value), name === 'factura' ? 'Factura' : 'Presupuesto']}
+                    contentStyle={{ fontSize: 11, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--foreground)' }}
+                    cursor={{ fill: 'var(--muted)', fillOpacity: 0.3 }}
+                  />
+                  <Legend
+                    formatter={(value) => <span style={{ fontSize: 10, color: 'var(--muted-foreground)' }}>{value === 'factura' ? 'Factura' : 'Presupuesto'}</span>}
+                    iconSize={8}
+                    wrapperStyle={{ paddingTop: 6 }}
+                  />
+                  <Bar dataKey="factura" name="factura" fill="var(--primary)" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="presupuesto" name="presupuesto" fill="var(--warning)" radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* Desglose por categoría */}
+          {kpis.porCategoria.length > 0 && (
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-2">Inversión por categoría (UI)</p>
+              <div className="space-y-1.5">
+                {kpis.porCategoria.map(({ cat, ui }) => {
+                  const pct = (ui / kpis.porCategoria[0].ui) * 100
+                  return (
+                    <div key={cat} className="flex items-center gap-2">
+                      <span className="text-[11px] text-muted-foreground w-40 shrink-0 truncate">{cat}</span>
+                      <div className="flex-1 bg-muted/40 rounded-full h-1.5 overflow-hidden">
+                        <div className="h-full bg-primary/70 rounded-full" style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="text-[11px] text-foreground w-28 text-right shrink-0">{fmtUI(ui)}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-6">
         {/* Upload area */}
@@ -245,13 +515,22 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
             <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
               Archivos · {activePeriodo === 'presentacion' ? 'Presentación' : `Control ${activePeriodo.replace('control_', '')}`}
             </h2>
+            <Button
+              onClick={handleDownloadTemplate}
+              variant="outline"
+              size="sm"
+              className="h-[26px] text-[11px] gap-1.5"
+            >
+              <Download size={12} />
+              Template Excel
+            </Button>
           </div>
-          
+
           <div className="rounded-xl border-[1.5px] border-dashed border-border/60 p-8 text-center bg-card/10 hover:bg-primary/5 hover:border-primary/40 transition-colors group">
             <input
               type="file"
               multiple
-              accept=".pdf,.png,.jpg,.jpeg,.webp"
+              accept=".xlsx,.pdf,.png,.jpg,.jpeg,.webp"
               onChange={(e) => { setFiles([...e.target.files]); setUploadMsg('') }}
               className="hidden"
               id="factura-upload"
@@ -262,16 +541,21 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
               </div>
               <div>
                 <p className="text-[13px] font-medium text-foreground group-hover:text-primary transition-colors">
-                  {files.length > 0 ? `${files.length} archivo(s) seleccionados` : 'Arrastrá los PDFs o hacé clic para seleccionar'}
+                  {files.length > 0
+                    ? `${files.length} archivo(s) seleccionados`
+                    : 'Arrastrá archivos o hacé clic para seleccionar'}
                 </p>
-                <p className="text-[11px] text-muted-foreground mt-1">Solo archivos PDF o imágenes compatibles</p>
+                <p className="text-[11px] text-muted-foreground mt-1">PDF / imágenes (procesado por IA) · o Excel completo para importación masiva</p>
               </div>
             </label>
-            
+
             {files.length > 0 && (
               <div className="mt-5 flex justify-center">
-                <Button onClick={handleUpload} disabled={uploading} size="sm" className="h-[30px] px-6 text-[12px]">
-                  {uploading ? <><Spinner size={12} className="mr-2"/> Subiendo...</> : 'Subir archivos'}
+                <Button onClick={handleUpload} disabled={uploading || importing} size="sm" className="h-[30px] px-6 text-[12px]">
+                  {uploading ? <><Spinner size={12} className="mr-2"/> Procesando...</>
+                    : importing ? <><Spinner size={12} className="mr-2"/> Importando...</>
+                    : files.length === 1 && files[0].name.toLowerCase().endsWith('.xlsx') ? 'Importar Excel'
+                    : 'Subir y procesar'}
                 </Button>
               </div>
             )}
@@ -284,29 +568,39 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-5 gap-3">
             <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Resultados</h2>
             <div className="flex gap-2 flex-wrap">
-              <Button
-                onClick={handleAnalyze}
-                disabled={analyzing || isEditing}
-                variant="secondary"
-                size="sm"
-                className="h-[28px] text-[11px] gap-1.5 bg-background"
-              >
-                {analyzing ? <Spinner size={12} /> : <FileSearch size={13} />}
-                Analizar factura
-              </Button>
-
               {!isEditing ? (
-                <Button
-                  onClick={handleEditToggle}
-                  disabled={loadingResults || !results?.length}
-                  variant="outline"
-                  size="sm"
-                  className="h-[28px] text-[11px] gap-1.5"
-                >
-                  Editar
-                </Button>
+                <>
+                  <Button
+                    onClick={handleEditToggle}
+                    disabled={loadingResults}
+                    variant="outline"
+                    size="sm"
+                    className="h-[28px] text-[11px] gap-1.5"
+                  >
+                    Editar
+                  </Button>
+                  <Button
+                    onClick={handleExport}
+                    disabled={exporting || !results?.length}
+                    variant="default"
+                    size="sm"
+                    className="h-[28px] text-[11px] gap-1.5 bg-[#22b86c] hover:bg-[#1aa35f] text-white"
+                  >
+                    {exporting ? <Spinner size={12} /> : <Download size={13} />}
+                    Exportar COMAP
+                  </Button>
+                </>
               ) : (
                 <>
+                  <Button
+                    onClick={handleAddRow}
+                    variant="outline"
+                    size="sm"
+                    className="h-[28px] text-[11px] gap-1.5"
+                  >
+                    <Plus size={13} />
+                    Agregar
+                  </Button>
                   <Button
                     onClick={handleSaveEdit}
                     disabled={savingEdit}
@@ -317,7 +611,6 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                     {savingEdit ? <Spinner size={12} /> : <Check size={13} />}
                     Ok
                   </Button>
-
                   <Button
                     onClick={handleEditToggle}
                     disabled={savingEdit}
@@ -327,63 +620,93 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                   >
                     Cancelar
                   </Button>
-                  {isEditing && (
-                    <Button
-                      onClick={handleDeleteSelected}
-                      disabled={!selectedRows.length || savingEdit}
-                      variant="destructive"
-                      size="sm"
-                      className="h-[28px] text-[11px] gap-1.5"
-                    >
-                      Eliminar seleccionadas
-                    </Button>
-                  )}
+                  <Button
+                    onClick={handleReprocesarSeleccionadas}
+                    disabled={!selectedRows.some(i => editedResults[i]?.archivo) || reprocesando}
+                    variant="secondary"
+                    size="sm"
+                    className="h-[28px] text-[11px] gap-1.5"
+                  >
+                    {reprocesando ? <Spinner size={12} /> : <RefreshCw size={13} />}
+                    Reprocesar seleccionadas
+                  </Button>
+                  <Button
+                    onClick={handleDeleteSelected}
+                    disabled={!selectedRows.length || savingEdit}
+                    variant="destructive"
+                    size="sm"
+                    className="h-[28px] text-[11px] gap-1.5"
+                  >
+                    Eliminar seleccionadas
+                  </Button>
                 </>
               )}
-
-              <Button
-                onClick={handleExport}
-                disabled={exporting || totalFacturas === 0 || isEditing}
-                variant="default"
-                size="sm"
-                className="h-[28px] text-[11px] gap-1.5 bg-success hover:bg-success/90 text-success-foreground"
-              >
-                {exporting ? <Spinner size={12} /> : <Download size={13} />}
-                Exportar COMAP
-              </Button>
             </div>
           </div>
           
-          {/* Stats Bar */}
-          {(results?.length > 0) && (
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
-              {[
-                { label: 'Facturas', val: totalFacturas },
-                { label: 'Completas', val: completas, color: 'text-success' },
-                { label: 'Con monto', val: conMonto },
-                { label: 'Requieren OCR', val: requierenOcr, color: requierenOcr > 0 ? 'text-destructive' : 'text-success' }
-              ].map(stat => (
-                <div key={stat.label} className="bg-card border border-border/60 rounded-lg p-3">
-                  <p className={cn("text-xl font-mono font-semibold", stat.color || "text-foreground")}>{stat.val}</p>
-                  <p className="text-[10px] text-muted-foreground/80 tracking-wide uppercase mt-1">{stat.label}</p>
-                </div>
-              ))}
+          {/* Cotización */}
+          <div className="flex items-center justify-between gap-3 mb-4 text-[12px] text-muted-foreground">
+            <div className="flex items-center gap-3">
+              <span className="font-semibold uppercase tracking-wider text-[10px]">Cotización</span>
+              {loadingCotizacion ? (
+                <span className="text-muted-foreground/60">Consultando BCU...</span>
+              ) : cotizacion ? (
+                <>
+                  <span className="bg-card border border-border/60 rounded px-2 py-0.5">
+                    USD <span className="text-foreground font-semibold">${cotizacion.valor_usd.toFixed(2)}</span>
+                  </span>
+                  <span className="bg-card border border-border/60 rounded px-2 py-0.5">
+                    UI <span className="text-foreground font-semibold">${cotizacion.valor_ui.toFixed(2)}</span>
+                  </span>
+                  <span className="text-[11px] text-muted-foreground/70">al {cotizacion.fecha}</span>
+                </>
+              ) : (
+                <span className="text-destructive/70 text-[11px]">Servicio BCU no disponible</span>
+              )}
             </div>
-          )}
+            <div className="relative">
+              <button
+                onClick={() => setSortOpen(o => !o)}
+                className="flex items-center gap-1.5 px-2.5 h-7 rounded border border-border/60 bg-card hover:bg-accent text-[11px] text-muted-foreground hover:text-foreground transition-all"
+              >
+                {SORT_OPTIONS.find(o => o.field === sortField)?.label ?? 'Ordenar'}
+                <span className="text-[10px]">{sortDir === 'asc' ? '↑' : '↓'}</span>
+              </button>
+              {sortOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setSortOpen(false)} />
+                  <div className="absolute right-0 top-full mt-1 z-20 bg-popover border border-border rounded-lg shadow-lg py-1 min-w-40">
+                    {SORT_OPTIONS.map(({ label, field }) => (
+                      <button
+                        key={field}
+                        onClick={() => { handleSort(field); setSortOpen(false) }}
+                        className={cn(
+                          "w-full text-left px-3 py-1.5 text-[12px] flex items-center justify-between hover:bg-accent transition-colors",
+                          sortField === field ? "text-foreground font-medium" : "text-muted-foreground"
+                        )}
+                      >
+                        {label}
+                        {sortField === field && <span className="text-[10px] ml-2">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
 
           {/* Results table */}
-          {analyzing && <LoadingState message="Procesando facturas..." />}
-          {loadingResults && !analyzing && <LoadingState message="Cargando resultados guardados..." />}
-          
-          {results && !analyzing && !loadingResults && (
+          {loadingResults && <LoadingState message="Cargando resultados guardados..." />}
+
+          {results && !loadingResults && (
             <div>
-              {results.length > 0 ? (
-                <div className="border border-border/80 rounded-lg overflow-x-auto shadow-sm">
-                  <table className="w-full text-sm">
+              {results.length > 0 || isEditing ? (
+                <div className={cn("overflow-x-auto shadow-sm", isEditing ? "border border-border/60 rounded-lg" : "border border-border/80 rounded-lg")}>
+                  <table className={cn("w-full text-[12px] min-w-[860px]", isEditing && "border-collapse")}>
                     <thead>
-                      <tr>
+                      <tr className={cn("border-b", isEditing ? "border-border/50 bg-muted/30" : "border-border/60")}>
                         {isEditing && (
-                          <th className="px-4 py-3 text-left">
+                          <th className="w-8 px-3 py-2 border-r border-border/30">
                             <input
                               type="checkbox"
                               checked={editedResults.length > 0 && selectedRows.length === editedResults.length}
@@ -391,24 +714,46 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                             />
                           </th>
                         )}
-
-                        {['Descripción', 'N° Factura', 'Proveedor', 'Fecha', 'Monto', 'Moneda', 'Categoría', 'Estado'].map((h) => (
+                        {[
+                          { label: 'Descripción', field: null },
+                          { label: 'N° Comprobante', field: 'numero_factura' },
+                          { label: 'Proveedor', field: 'proveedor' },
+                          { label: 'Fecha', field: 'fecha' },
+                          { label: 'Monto', field: 'monto' },
+                          { label: 'Moneda', field: 'moneda' },
+                          { label: 'Categoría', field: 'categoria' },
+                          { label: 'Tipo', field: 'tipo_comprobante' },
+                          { label: 'Estado', field: null },
+                        ].map(({ label, field }) => (
                           <th
-                            key={h}
-                            className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+                            key={label}
+                            onClick={field && !isEditing ? () => handleSort(field) : undefined}
+                            className={cn(
+                              "py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground select-none",
+                              isEditing ? "px-2 border-r border-border/30 last:border-r-0" : "px-3",
+                              field && !isEditing && "cursor-pointer hover:text-foreground transition-colors"
+                            )}
                           >
-                            {h}
+                            {label}
+                            {field && !isEditing && sortField === field && (
+                              <span className="ml-1 opacity-70">{sortDir === 'asc' ? '↑' : '↓'}</span>
+                            )}
                           </th>
                         ))}
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-border/60">
-                      {(isEditing ? editedResults : results).map((r, i) => {
+                    <tbody className={cn(isEditing ? "" : "divide-y divide-border/50")}>
+                      {(isEditing ? editedResults : sortedResults(results)).map((r, i) => {
                         const completado = r.proveedor && r.fecha && r.monto
+                        const cellEdit = "p-0 border-r border-b border-border/25 last:border-r-0"
+                        const inputEdit = "w-full min-h-[34px] bg-transparent text-foreground px-2 py-1 text-[12px] outline-none focus:bg-primary/5 placeholder:text-muted-foreground/40"
+                        const selectEdit = "w-full min-h-[34px] bg-background text-foreground px-2 py-1 text-[12px] outline-none focus:bg-primary/5 cursor-pointer"
+                        const toDateInput = (v) => { if (!v) return ''; const [d, m, y] = v.split('/'); return d && m && y ? `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}` : '' }
+                        const fromDateInput = (v) => { if (!v) return ''; const [y, m, d] = v.split('-'); return d && m && y ? `${d}/${m}/${y}` : '' }
                         return (
-                          <tr key={i} className="bg-card hover:bg-accent/40 transition-colors">
+                          <tr key={i} className={cn(isEditing ? "last:border-b-0" : "bg-card hover:bg-accent/30 transition-colors")}>
                             {isEditing && (
-                              <td className="px-4 py-3">
+                              <td className="w-8 px-3 border-r border-b border-border/25">
                                 <input
                                   type="checkbox"
                                   checked={selectedRows.includes(i)}
@@ -416,109 +761,109 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                                 />
                               </td>
                             )}
-                            <td className="px-4 py-3 text-[12px] max-w-[260px]">
+                            {/* Descripción */}
+                            <td className={isEditing ? cellEdit : "px-3 py-2.5 max-w-[220px]"}>
                               {isEditing ? (
-                                <Input
-                                  value={r.descripcion || ''}
-                                  onChange={(e) => handleFieldChange(i, 'descripcion', e.target.value)}
-                                  className="h-8 text-[12px]"
-                                />
+                                <input value={r.descripcion || ''} onChange={(e) => handleFieldChange(i, 'descripcion', e.target.value)} className={inputEdit} />
                               ) : (
-                                <div className="truncate" title={r.descripcion || ''}>
-                                  {r.descripcion || '--'}
-                                </div>
+                                <div className="truncate" title={r.descripcion || ''}>{r.descripcion || '--'}</div>
                               )}
                             </td>
-                            <td className="px-4 py-3 text-[12px] font-mono text-muted-foreground">
+                            {/* N° Factura */}
+                            <td className={isEditing ? cellEdit : "px-3 py-2.5 whitespace-nowrap"}>
                               {isEditing ? (
-                                <Input
-                                  value={r.numero_factura || ''}
-                                  onChange={(e) => handleFieldChange(i, 'numero_factura', e.target.value)}
-                                  className="h-8 text-[12px]"
-                                />
+                                <input value={r.numero_factura || ''} onChange={(e) => handleFieldChange(i, 'numero_factura', e.target.value)} className={inputEdit} />
                               ) : (
                                 r.numero_factura || '--'
                               )}
                             </td>
-                            <td className="px-4 py-3 text-[13px]">
+                            {/* Proveedor */}
+                            <td className={isEditing ? cellEdit : "px-3 py-2.5"}>
                               {isEditing ? (
-                                <Input
-                                  value={r.proveedor || ''}
-                                  onChange={(e) => handleFieldChange(i, 'proveedor', e.target.value)}
-                                  className="h-8 text-[12px]"
-                                />
+                                <input value={r.proveedor || ''} onChange={(e) => handleFieldChange(i, 'proveedor', e.target.value)} className={inputEdit} />
                               ) : (
                                 r.proveedor || '--'
                               )}
                             </td>
-                            <td className="px-4 py-3 text-[12px] whitespace-nowrap font-mono text-muted-foreground">
+                            {/* Fecha */}
+                            <td className={isEditing ? cellEdit : "px-3 py-2.5 whitespace-nowrap"}>
                               {isEditing ? (
-                                <Input
-                                  value={r.fecha || ''}
-                                  onChange={(e) => handleFieldChange(i, 'fecha', e.target.value)}
-                                  className="h-8 text-[12px]"
-                                  placeholder="DD/MM/YYYY"
-                                />
+                                <input type="date" value={toDateInput(r.fecha || '')} onChange={(e) => handleFieldChange(i, 'fecha', fromDateInput(e.target.value))} className={cn(inputEdit, "dark:scheme-dark")} />
                               ) : (
                                 r.fecha || '--'
                               )}
                             </td>
-                            <td className="px-4 py-3 text-[13px] text-right font-mono tabular-nums">
+                            {/* Monto */}
+                            <td className={isEditing ? cellEdit : "px-3 py-2.5 text-right"}>
                               {isEditing ? (
-                                <Input
-                                  type="number"
-                                  step="0.01"
-                                  value={r.monto ?? ''}
-                                  onChange={(e) => handleFieldChange(i, 'monto', e.target.value)}
-                                  className="h-8 text-[12px]"
-                                />
+                                <input type="number" step="0.01" value={r.monto ?? ''} onChange={(e) => handleFieldChange(i, 'monto', e.target.value)} className={cn(inputEdit, "text-right w-24")} />
                               ) : (
                                 r.monto != null ? r.monto.toLocaleString() : '--'
                               )}
                             </td>
-                            <td className="px-4 py-3 text-[12px] font-mono">
+                            {/* Moneda */}
+                            <td className={isEditing ? cellEdit : "px-3 py-2.5"}>
                               {isEditing ? (
-                                <select
-                                  value={r.moneda || ''}
-                                  onChange={(e) => handleFieldChange(i, 'moneda', e.target.value)}
-                                  className="h-8 rounded-md border border-input bg-background px-2 text-[12px]"
-                                >
-                                  <option value="">--</option>
-                                  <option value="UYU">UYU</option>
-                                  <option value="USD">USD</option>
-                                </select>
+                                <CellDropdown
+                                  id={`${i}-moneda`}
+                                  value={(r.moneda || '').trim()}
+                                  options={[{ v: '', l: '--' }, { v: 'UYU', l: 'UYU' }, { v: 'USD', l: 'USD' }]}
+                                  onChange={(v) => handleFieldChange(i, 'moneda', v)}
+                                  open={openDropdown === `${i}-moneda`}
+                                  onOpen={setOpenDropdown}
+                                />
                               ) : (
                                 r.moneda || '--'
                               )}
                             </td>
-                            <td className="px-4 py-3 text-[12px]">
+                            {/* Categoría */}
+                            <td className={isEditing ? cellEdit : "px-3 py-2.5"}>
                               {isEditing ? (
-                                <select
+                                <CellDropdown
+                                  id={`${i}-categoria`}
                                   value={r.categoria || ''}
-                                  onChange={(e) => handleFieldChange(i, 'categoria', e.target.value)}
-                                  className="h-8 rounded-md border border-input bg-background px-2 text-[12px]"
-                                >
-                                  <option value="">--</option>
-                                  <option value="Maquinaria">Maquinaria</option>
-                                  <option value="Equipos">Equipos</option>
-                                  <option value="Instalaciones">Instalaciones</option>
-                                  <option value="Vehiculos">Vehículos</option>
-                                  <option value="MEIV/Imprevistos">MEIV/Imprevistos</option>
-                                  <option value="Materiales">Materiales</option>
-                                  <option value="Mano de Obra Directa">Mano de Obra Directa</option>
-                                  <option value="Mano de Obra Indirecta">Mano de Obra Indirecta</option>
-                                  <option value="Leyes Sociales">Leyes Sociales</option>
-                                  <option value="Honorarios">Honorarios</option>
-                                  <option value="OC/Imprevistos">OC/Imprevistos</option>
-                                </select>
+                                  options={[
+                                    { v: '', l: '--' },
+                                    { v: 'Maquinaria', l: 'Maquinaria' },
+                                    { v: 'Equipos', l: 'Equipos' },
+                                    { v: 'Instalaciones', l: 'Instalaciones' },
+                                    { v: 'Vehiculos', l: 'Vehículos' },
+                                    { v: 'MEIV/Imprevistos', l: 'MEIV/Imprevistos' },
+                                    { v: 'Materiales', l: 'Materiales' },
+                                    { v: 'Mano de Obra Directa', l: 'Mano de Obra Directa' },
+                                    { v: 'Mano de Obra Indirecta', l: 'Mano de Obra Indirecta' },
+                                    { v: 'Leyes Sociales', l: 'Leyes Sociales' },
+                                    { v: 'Honorarios', l: 'Honorarios' },
+                                    { v: 'OC/Imprevistos', l: 'OC/Imprevistos' },
+                                  ]}
+                                  onChange={(v) => handleFieldChange(i, 'categoria', v)}
+                                  open={openDropdown === `${i}-categoria`}
+                                  onOpen={setOpenDropdown}
+                                />
                               ) : (
                                 r.categoria || '--'
                               )}
                             </td>
-                            <td className="px-4 py-3">
-                              {completado 
-                                ? <Badge variant="secondary" className="bg-success/15 text-success border-transparent hover:bg-success/25 font-medium px-2 h-5">✓ Completo</Badge>
-                                : <Badge variant="secondary" className="bg-warning/15 text-warning border-transparent hover:bg-warning/25 font-medium px-2 h-5 text-[10px]">⚠ Incompleto</Badge>}
+                            {/* Tipo de comprobante */}
+                            <td className={isEditing ? cellEdit : "px-3 py-2.5 whitespace-nowrap"}>
+                              {isEditing ? (
+                                <CellDropdown
+                                  id={`${i}-tipo`}
+                                  value={r.tipo_comprobante || ''}
+                                  options={[{ v: '', l: '--' }, { v: 'Factura', l: 'Factura' }, { v: 'Presupuesto', l: 'Presupuesto' }]}
+                                  onChange={(v) => handleFieldChange(i, 'tipo_comprobante', v)}
+                                  open={openDropdown === `${i}-tipo`}
+                                  onOpen={setOpenDropdown}
+                                />
+                              ) : (
+                                r.tipo_comprobante || '--'
+                              )}
+                            </td>
+                            {/* Estado */}
+                            <td className="px-3 py-2.5 whitespace-nowrap">
+                              {completado
+                                ? <Badge variant="secondary" className="bg-success/15 text-success border-transparent font-medium px-2 h-5 text-[10px]">✓ Completo</Badge>
+                                : <Badge variant="secondary" className="bg-warning/15 text-warning border-transparent font-medium px-2 h-5 text-[10px]">⚠ Incompleto</Badge>}
                             </td>
                           </tr>
                         )
@@ -528,7 +873,11 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                 </div>
               ) : (
                 <div className="border border-dashed border-border/60 rounded-lg py-12 text-center bg-card/5">
-                  <p className="text-[13px] text-muted-foreground">No hay facturas cargadas para este período.</p>
+                  {isEditing ? (
+                    <p className="text-[13px] text-muted-foreground">Usá <strong>+ Agregar</strong> para añadir la primera factura.</p>
+                  ) : (
+                    <p className="text-[13px] text-muted-foreground">No hay facturas cargadas. Usá <strong>Editar</strong> o <strong>Importar</strong>.</p>
+                  )}
                 </div>
               )}
             </div>
@@ -541,7 +890,9 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
 
 /* ─── Checklist ───────────────────────────────────── */
 
-function ChecklistTab({ empresaId, proyectoId }) {
+const ESTADO_ORDER = { pendiente: 0, completado: 1, no_aplica: 2 }
+
+function ChecklistTab({ empresaId, proyectoId, onCountUpdate }) {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [uploadingId, setUploadingId] = useState(null)
@@ -553,18 +904,21 @@ function ChecklistTab({ empresaId, proyectoId }) {
 
   useEffect(() => { load() }, [load])
 
+  useEffect(() => {
+    const pendientes = items.filter(i => i.estado === 'pendiente').length
+    onCountUpdate?.(pendientes)
+  }, [items, onCountUpdate])
+
   const handleToggle = async (item, targetState) => {
     const nuevoEstado = item.estado === targetState ? 'pendiente' : targetState
-    // Optimistic update
-    setItems(currentItems => currentItems.map(i => 
+    setItems(currentItems => currentItems.map(i =>
       i.id === item.id ? { ...i, estado: nuevoEstado } : i
     ))
-    
     try {
       await checkApi.updateItem(empresaId, proyectoId, item.id, nuevoEstado, item.nota_usuario || '')
     } catch (err) {
       console.error(err)
-      load() // Revert to server state on error
+      load()
     }
   }
 
@@ -572,198 +926,118 @@ function ChecklistTab({ empresaId, proyectoId }) {
     setUploadingId(itemId)
     try {
       await checkApi.uploadFile(empresaId, proyectoId, itemId, file)
-      // Optimistic update without triggering the main loading state
-      setItems(currentItems => currentItems.map(i => 
+      setItems(currentItems => currentItems.map(i =>
         i.id === itemId ? { ...i, estado: 'completado', archivo: file.name } : i
       ))
     } catch (error) {
       console.error(error)
-      load() // Revert to server state on error
+      load()
     } finally {
       setUploadingId(null)
     }
   }
 
+  const [naOpen, setNaOpen] = useState(false)
+
   if (loading) return <LoadingState message="Cargando checklist..." />
 
   const completados = items.filter(i => i.estado === 'completado').length
-  const noAplica = items.filter(i => i.estado === 'no_aplica').length
-  const pendientes = items.length - completados - noAplica
-  
-  const sections = items.reduce((acc, item) => {
+  const naItems = items.filter(i => i.estado === 'no_aplica')
+  const activeItems = items.filter(i => i.estado !== 'no_aplica')
+  const pendientes = activeItems.filter(i => i.estado === 'pendiente').length
+
+  const sections = activeItems.reduce((acc, item) => {
     const s = item.seccion || 'General'
     ;(acc[s] || (acc[s] = [])).push(item)
     return acc
   }, {})
 
-  return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Progress Stats */}
-      <div className="bg-card/30 border border-border/50 rounded-xl p-5 shadow-sm">
-        <div className="flex flex-col sm:flex-row gap-4 divide-y sm:divide-y-0 sm:divide-x divide-border/50">
-          <div className="flex-1 px-4 py-1 text-center">
-            <p className="text-2xl font-mono font-semibold text-success">{completados}</p>
-            <p className="text-[10px] text-muted-foreground/80 tracking-wide uppercase mt-1">Completados</p>
-          </div>
-          <div className="flex-1 px-4 py-1 text-center">
-            <p className="text-2xl font-mono font-semibold text-warning">{pendientes}</p>
-            <p className="text-[10px] text-muted-foreground/80 tracking-wide uppercase mt-1">Pendientes</p>
-          </div>
-          <div className="flex-1 px-4 py-1 text-center">
-            <p className="text-2xl font-mono font-semibold text-foreground">{noAplica}</p>
-            <p className="text-[10px] text-muted-foreground/80 tracking-wide uppercase mt-1">No aplica</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Items by section */}
-      <div className="bg-card/30 border border-border/50 rounded-xl p-5 md:p-6 shadow-sm">
-        {Object.entries(sections).map(([seccion, sectionItems], sidx) => (
-          <div key={seccion} className={sidx > 0 ? "mt-6" : ""}>
-            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-3">{seccion}</p>
-            <div className="space-y-2">
-              {sectionItems.map((item) => {
-                const isOk = item.estado === 'completado'
-                const isNa = item.estado === 'no_aplica'
-                return (
-                  <div
-                    key={item.id}
-                    className={cn(
-                      'flex flex-col sm:flex-row sm:items-start gap-3 p-3 lg:p-4 border rounded-xl transition-all',
-                      isOk ? 'bg-success/5 border-success/30 shadow-sm' : isNa ? 'bg-card/40 border-border/40 grayscale-[0.5]' : 'bg-card border-border/60 hover:border-primary/30 shadow-sm',
-                    )}
-                  >
-                    <div className="text-[11px] font-mono text-muted-foreground/60 w-5 shrink-0 pt-0.5">{item.id}</div>
-                    
-                    <div className={cn("flex-1 min-w-0 pr-4 transition-opacity", isNa ? "opacity-60" : "opacity-100")}>
-                      <p className={cn('text-[14px] font-medium leading-snug', isOk ? 'text-foreground/80' : 'text-foreground')}>
-                        {item.descripcion}
-                      </p>
-                      {item.nota && <p className="text-[12px] text-muted-foreground/80 mt-1 italic">{item.nota}</p>}
-                      {item.archivo && (
-                        <div className="text-[11px] text-success mt-1.5 flex items-center gap-1.5 font-medium">
-                          📎 {item.archivo}
-                          <a href={`/api/empresas/${empresaId}/proyectos/${proyectoId}/checklist/${item.id}/archivo`} target="_blank" rel="noreferrer" className="text-primary hover:underline ml-2">Descargar</a>
-                        </div>
-                      )}
-                    </div>
-                    
-                    <div className="flex items-center gap-2 mt-2 sm:mt-0 pt-2 border-t border-border/40 sm:pt-0 sm:border-0 shrink-0">
-                      {item.acepta_archivo && (
-                        <>
-                          <input type="file" id={`cf-${item.id}`} className="hidden" onChange={(e) => e.target.files[0] && handleFileUpload(item.id, e.target.files[0])} />
-                          <label htmlFor={`cf-${item.id}`} className="cursor-pointer text-[11px] font-medium border border-border/60 rounded px-2.5 h-[26px] flex items-center bg-background hover:bg-primary/5 hover:border-primary/30 transition-all gap-1.5">
-                            {uploadingId === item.id ? <><Spinner size={10} /> Subiendo</> : '📎 Subir'}
-                          </label>
-                        </>
-                      )}
-                      <button
-                        onClick={() => handleToggle(item, 'completado')}
-                        className={cn(
-                          'h-[26px] px-2.5 rounded border text-[11px] font-medium transition-all flex items-center gap-1',
-                          isOk ? 'bg-success/15 border-success/40 text-success' : 'bg-background border-border/60 text-muted-foreground hover:border-success/50 hover:text-success'
-                        )}
-                      >
-                        ✓ OK
-                      </button>
-                      <button
-                        onClick={() => handleToggle(item, 'no_aplica')}
-                        className={cn(
-                          'h-[26px] px-2.5 rounded border text-[11px] font-medium transition-all flex items-center gap-1',
-                          isNa ? 'bg-muted border-border/80 text-foreground' : 'bg-background border-border/60 text-muted-foreground hover:border-muted-foreground/50 hover:text-foreground'
-                        )}
-                      >
-                        N/A
-                      </button>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-/* ─── Simulador ───────────────────────────────────── */
-
-function SimuladorTab({ empresaId, proyectoId, results, loadingResults, onUpdateResults }) {
-  const [downloading, setDownloading] = useState(false)
-  const [uploading, setUploading] = useState(false)
-
-  const handleDownload = async () => {
-    setDownloading(true)
-    try {
-      const blob = await simApi.download(empresaId, proyectoId)
-      const a = document.createElement('a')
-      a.href = URL.createObjectURL(blob)
-      a.download = 'Simulador_COMAP.xlsx'
-      a.click()
-    } catch (err) { console.error(err) }
-    finally { setDownloading(false) }
-  }
-
-  const handleUpload = async (e) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setUploading(true)
-    try { 
-      const res = await simApi.upload(empresaId, proyectoId, file)
-      if (onUpdateResults) onUpdateResults(res.resultados || res)
-    }
-    catch (err) { console.error(err) }
-    finally { setUploading(false) }
-  }
-
-  return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="bg-card/30 border border-border/50 rounded-xl p-5 shadow-sm">
-        <div className="flex flex-col sm:flex-row gap-3">
-          <Button onClick={handleDownload} disabled={downloading} variant="secondary" size="sm" className="gap-1.5 h-9 bg-background">
-            {downloading ? <Spinner size={13} /> : <Download size={14} />}
-            Descargar template (.xlsx)
-          </Button>
-          <div>
-            <input type="file" accept=".xlsx" id="sim-up" className="hidden" onChange={handleUpload} />
-            <label htmlFor="sim-up">
-              <Button variant="default" size="sm" asChild disabled={uploading} className="gap-1.5 h-9 cursor-pointer shadow-sm">
-                <span>{uploading ? <><Spinner size={13} /> Subiendo...</> : <><Upload size={14} /> Subir archivo completado</>}</span>
-              </Button>
-            </label>
-          </div>
-        </div>
-      </div>
-
-      {loadingResults ? (
-        <LoadingState message="Cargando resultados..." />
-      ) : results && !results.error && Object.keys(results).length > 0 ? (
-        <div className="bg-card/30 border border-border/50 rounded-xl p-5 shadow-sm overflow-hidden">
-          <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-4 pl-1">Resultados Extraídos</h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-px bg-border/40 rounded-xl overflow-hidden border border-border/40">
-            {[
-              { label: 'Puntaje final', value: results.puntaje_final, accent: true },
-              { label: 'Alcanza mínimo', value: results.alcanza_minimo, color: results.alcanza_minimo === 'SI' ? 'text-success' : 'text-destructive' },
-              { label: 'Exoneración IRAE', value: results.exoneracion_irae_pct ? `${(results.exoneracion_irae_pct * 100).toFixed(1)}%` : '--' },
-              { label: 'Exoneración (UI)', value: results.exoneracion_ui ? parseFloat(results.exoneracion_ui).toLocaleString() : '--' },
-              { label: 'Plazo exoneración', value: results.plazo_exoneracion ? `${results.plazo_exoneracion} años` : '--' },
-            ].map(({ label, value, accent, color }) => (
-              <div key={label} className="bg-card px-5 py-5 hover:bg-card/80 transition-colors">
-                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/80">{label}</p>
-                <p className={cn('text-xl font-semibold mt-1 tabular-nums font-mono', accent ? 'text-primary' : (color || 'text-foreground'))}>
-                  {value != null ? String(value) : '--'}
-                </p>
+  const renderItem = (item) => {
+    const isOk = item.estado === 'completado'
+    const isNa = item.estado === 'no_aplica'
+    return (
+      <div
+        key={item.id}
+        className={cn(
+          'flex flex-col gap-2 p-3 border rounded-lg transition-all',
+          isOk ? 'bg-success/5 border-success/30' : isNa ? 'bg-card/40 border-border/30 opacity-60' : 'bg-card border-border/60 hover:border-primary/30',
+        )}
+      >
+        <div className="flex items-start gap-2">
+          <div className="text-[10px] font-mono text-muted-foreground/60 w-4 shrink-0 pt-0.5">{item.id}</div>
+          <div className="flex-1 min-w-0">
+            <p className={cn('text-[12px] font-medium leading-snug', isOk ? 'text-foreground/80' : 'text-foreground')}>
+              {item.descripcion}
+            </p>
+            {item.nota && <p className="text-[11px] text-muted-foreground/70 mt-0.5 italic">{item.nota}</p>}
+            {item.archivo && (
+              <div className="text-[10px] text-success mt-1 flex items-center gap-1 font-medium">
+                📎 {item.archivo}
+                <a href={`/api/empresas/${empresaId}/proyectos/${proyectoId}/checklist/${item.id}/archivo`} target="_blank" rel="noreferrer" className="text-primary hover:underline ml-1">Descargar</a>
               </div>
-            ))}
+            )}
           </div>
         </div>
-      ) : (
-        <EmptyState
-          icon={Calculator}
-          title="Sin resultados"
-          description="Descargá el template o subí el simulador completado para ver los resultados del proyecto."
-        />
+        <div className="flex items-center gap-1.5 pl-6">
+          {item.acepta_archivo && (
+            <>
+              <input type="file" id={`cf-${item.id}`} className="hidden" onChange={(e) => e.target.files[0] && handleFileUpload(item.id, e.target.files[0])} />
+              <label htmlFor={`cf-${item.id}`} className="cursor-pointer text-[10px] font-medium border border-border/60 rounded px-2 h-[22px] flex items-center bg-background hover:bg-primary/5 hover:border-primary/30 transition-all gap-1">
+                {uploadingId === item.id ? <><Spinner size={9} /> Subiendo</> : '📎 Subir'}
+              </label>
+            </>
+          )}
+          <button
+            onClick={() => handleToggle(item, 'completado')}
+            className={cn(
+              'h-[22px] px-2 rounded border text-[10px] font-medium transition-all',
+              isOk ? 'bg-success/15 border-success/40 text-success' : 'bg-background border-border/60 text-muted-foreground hover:border-success/50 hover:text-success'
+            )}
+          >✓ OK</button>
+          <button
+            onClick={() => handleToggle(item, 'no_aplica')}
+            className={cn(
+              'h-[22px] px-2 rounded border text-[10px] font-medium transition-all',
+              isNa ? 'bg-muted border-border/80 text-foreground' : 'bg-background border-border/60 text-muted-foreground hover:border-muted-foreground/50 hover:text-foreground'
+            )}
+          >N/A</button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="p-4 space-y-5">
+      <p className="text-[11px] text-muted-foreground">
+        <span className="text-warning font-medium">{pendientes} pendientes</span>
+        {' · '}<span className="text-success font-medium">{completados} completados</span>
+        {naItems.length > 0 && <>{' · '}{naItems.length} N/A</>}
+      </p>
+
+      {Object.entries(sections).map(([seccion, sectionItems], sidx) => (
+        <div key={seccion} className={sidx > 0 ? "mt-4" : ""}>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-2">{seccion}</p>
+          <div className="space-y-1.5">
+            {sectionItems.map(renderItem)}
+          </div>
+        </div>
+      ))}
+
+      {naItems.length > 0 && (
+        <div className="mt-4">
+          <button
+            onClick={() => setNaOpen(o => !o)}
+            className="w-full flex items-center justify-between px-3 py-2 rounded-lg border border-border/40 bg-card/40 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:border-border/70 transition-all"
+          >
+            <span>No aplica · {naItems.length}</span>
+            <span className="text-[10px]">{naOpen ? '▲' : '▼'}</span>
+          </button>
+          {naOpen && (
+            <div className="mt-1.5 space-y-1.5">
+              {naItems.map(renderItem)}
+            </div>
+          )}
+        </div>
       )}
     </div>
   )
@@ -771,25 +1045,15 @@ function SimuladorTab({ empresaId, proyectoId, results, loadingResults, onUpdate
 
 /* ─── Main ────────────────────────────────────────── */
 
-const TABS = [
-  { id: 'facturas', label: 'Períodos y facturas', icon: FileText },
-  { id: 'checklist', label: 'Checklist presentación', icon: CheckSquare },
-  { id: 'simulador', label: 'Simulador', icon: Calculator },
-]
-
 export default function ProyectoDetail() {
   const { empresaId, proyectoId } = useParams()
   const [empresa, setEmpresa] = useState(null)
   const [meta, setMeta] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('facturas')
-  
-  // Simulador state moved to top level for Banner
-  const [simResults, setSimResults] = useState(null)
-  const [simLoading, setSimLoading] = useState(true)
+  const [checklistOpen, setChecklistOpen] = useState(false)
+  const [checklistPendientes, setChecklistPendientes] = useState(null)
 
   useEffect(() => {
-    // Parallel fetching meta info 
     Promise.all([
       empApi.get(empresaId).catch(() => null),
       projApi.list(empresaId).catch(() => [])
@@ -799,14 +1063,6 @@ export default function ProyectoDetail() {
     }).finally(() => {
       setLoading(false)
     })
-    
-    // Fetch sim results for banner
-    setSimLoading(true)
-    simApi.results(empresaId, proyectoId)
-      .then(res => setSimResults(res))
-      .catch(() => {})
-      .finally(() => setSimLoading(false))
-      
   }, [empresaId, proyectoId])
 
   if (loading) return <LoadingState />
@@ -817,98 +1073,68 @@ export default function ProyectoDetail() {
       periodos.push(`control_${meta.anio_presentacion + i}`)
     }
   }
-  
-  const hasSimData = simResults && simResults.puntaje_final !== undefined && !simResults.error && !String(simResults.puntaje_final).includes('#')
-  const alcanza = simResults?.alcanza_minimo === 'SI'
 
   return (
-    <div className="animate-fade-up">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <Link to={`/empresas/${empresaId}`} className="rounded-md p-1.5 hover:bg-accent transition-colors text-muted-foreground hover:text-foreground">
-            <ArrowLeft size={16} />
-          </Link>
-          <div className="flex flex-col">
-            <h1 className="text-xl font-medium truncate flex items-center gap-2">
-              {empresa?.nombre} <span className="text-muted-foreground/30">•</span> {meta?.expediente || meta?.fecha_presentacion || (meta?.fecha_creacion ? new Date(meta.fecha_creacion).toLocaleDateString() : 'Sin fecha')}
-            </h1>
-            <p className="text-[13px] text-muted-foreground font-mono mt-0.5">
-              {empresa?.rut} · Presentación {meta?.anio_presentacion || '--'} {meta?.fecha_presentacion ? `· ${meta.fecha_presentacion}` : ''}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Simulador Banner */}
-      {hasSimData && (
-        <div className={cn(
-          "rounded-xl p-4 mb-6 flex gap-6 items-center flex-wrap shadow-sm border",
-          alcanza ? "bg-success/5 border-success/20" : "bg-destructive/5 border-destructive/20"
-        )}>
-          <div className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/80 w-full sm:w-auto">
-            BENEFICIO ESTIMADO
-          </div>
-          <div className="flex items-center gap-6 flex-wrap flex-1">
-            <div>
-              <span className={cn("text-lg font-mono font-bold", alcanza ? "text-success" : "text-destructive")}>{simResults.alcanza_minimo}</span>
-              <span className="text-[11px] text-muted-foreground/70 ml-2">Puntaje Mínimo</span>
-            </div>
-            <div>
-              <span className="text-lg font-mono font-bold text-primary">
-                {simResults.exoneracion_irae_pct ? `${(simResults.exoneracion_irae_pct * 100).toFixed(1)}%` : '--'}
-              </span>
-              <span className="text-[11px] text-muted-foreground/70 ml-2">Exon. IRAE</span>
-            </div>
-            <div>
-              <span className="text-lg font-mono font-bold text-foreground">
-                {simResults.plazo_exoneracion || '--'}
-              </span>
-              <span className="text-[11px] text-muted-foreground/70 ml-2">Años Plazo</span>
-            </div>
-            <div>
-              <span className="text-lg font-mono font-bold text-foreground">
-                {simResults.puntaje_final || '--'}
-              </span>
-              <span className="text-[11px] text-muted-foreground/70 ml-2">Puntaje Final</span>
+    <>
+      <div className="animate-fade-up">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <Link to={`/empresas/${empresaId}`} className="rounded-md p-1.5 hover:bg-accent transition-colors text-muted-foreground hover:text-foreground">
+              <ArrowLeft size={16} />
+            </Link>
+            <div className="flex flex-col">
+              <h1 className="text-xl font-medium truncate flex items-center gap-2">
+                {empresa?.nombre} <span className="text-muted-foreground/30">•</span> {meta?.expediente || meta?.fecha_presentacion || (meta?.fecha_creacion ? new Date(meta.fecha_creacion).toLocaleDateString() : 'Sin fecha')}
+              </h1>
+              <p className="text-[13px] text-muted-foreground mt-0.5">
+                {empresa?.rut} · Presentación {meta?.anio_presentacion || '--'} {meta?.fecha_presentacion ? `· ${meta.fecha_presentacion}` : ''}
+              </p>
             </div>
           </div>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            className="h-[28px] text-[11px] px-3 bg-background/50 ml-auto"
-            onClick={() => setActiveTab('simulador')}
-          >
-            Ver detalle
-          </Button>
-        </div>
-      )}
-
-      {/* Tab bar */}
-      <div className="flex gap-2 border-b border-border/50 mb-6 px-1">
-        {TABS.map((tab) => (
           <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={cn(
-              'flex items-center gap-1.5 px-4 py-2.5 text-[13px] font-medium transition-all mb-[-1px] border-b-2',
-              activeTab === tab.id
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/30',
-            )}
+            onClick={() => setChecklistOpen(o => !o)}
+            className="flex items-center gap-2 px-3 h-9 rounded-lg border border-border/60 bg-card hover:bg-accent hover:border-primary/40 transition-all text-[12px] font-medium text-muted-foreground hover:text-foreground shrink-0"
           >
-            <tab.icon size={14} strokeWidth={2} className={activeTab === tab.id ? 'opacity-100' : 'opacity-70'} />
-            {tab.label}
+            <CheckSquare size={14} strokeWidth={2} />
+            Checklist
+            {checklistPendientes !== null && checklistPendientes > 0 && (
+              <span className="bg-warning/20 text-warning text-[10px] rounded-full px-1.5 py-0.5 font-semibold leading-none">
+                {checklistPendientes}
+              </span>
+            )}
           </button>
-        ))}
+        </div>
+
+        {/* Facturas (vista principal) */}
+        <div className="pb-10">
+          <FacturasTab empresaId={empresaId} proyectoId={proyectoId} periodos={periodos} meta={meta} />
+        </div>
       </div>
 
-      {/* Tab content */}
-      <div className="pb-10">
-        {activeTab === 'facturas' && <FacturasTab empresaId={empresaId} proyectoId={proyectoId} periodos={periodos} meta={meta} />}
-        {activeTab === 'checklist' && <ChecklistTab empresaId={empresaId} proyectoId={proyectoId} />}
-        {activeTab === 'simulador' && <SimuladorTab empresaId={empresaId} proyectoId={proyectoId} results={simResults} loadingResults={simLoading} onUpdateResults={setSimResults} />}
+
+      {/* Panel checklist */}
+      <div className={cn(
+        "fixed top-0 right-0 h-screen w-[440px] z-50 bg-background border-l border-border shadow-2xl flex flex-col transition-transform duration-300",
+        checklistOpen ? "translate-x-0" : "translate-x-full"
+      )}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border/60 shrink-0">
+          <h2 className="text-[14px] font-semibold">Checklist presentación</h2>
+          <button
+            onClick={() => setChecklistOpen(false)}
+            className="rounded-md p-1.5 hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
+          >
+            <X size={15} />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          <ChecklistTab
+            empresaId={empresaId}
+            proyectoId={proyectoId}
+            onCountUpdate={setChecklistPendientes}
+          />
+        </div>
       </div>
-    </div>
+    </>
   )
 }

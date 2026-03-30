@@ -9,6 +9,8 @@ const proyectoService = require('../proyecto/proyecto.service');
 const empresaService = require('../empresa/empresa.service');
 const supabaseService = require('../../config/supabase.config');
 const prisma = require('../../config/prisma');
+const cotizacionService = require('../cotizacion/cotizacion.service');
+const { formatearFecha } = require('../../common/utils/normalize');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
 const router = Router({ mergeParams: true });
@@ -30,30 +32,29 @@ function getMimeType(filename) {
 
 /** Save results to database */
 async function guardarResultadosDB(proyectoId, periodo, resultados) {
-  await prisma.factura.deleteMany({
-    where: { proyectoId, periodo }
-  });
-  
-  if (resultados && resultados.length > 0) {
-    const dataToInsert = resultados.map(r => ({
-      proyectoId,
-      periodo,
-      archivo: r.archivo || null,
-      descripcion: r.descripcion || null,
-      numero_factura: r.numero_factura || null,
-      proveedor: r.proveedor || null,
-      rut: r.rut || null,
-      fecha: r.fecha || null,
-      monto: r.monto ? parseFloat(r.monto) : null,
-      moneda: r.moneda || null,
-      cantidad: r.cantidad ? parseInt(r.cantidad) : 1,
-      categoria: r.categoria || null,
-      rut_receptor: r.rut_receptor || null,
-      razon_social_receptor: r.razon_social_receptor || null,
-      texto_extraido: Boolean(r.texto_extraido)
-    }));
-    await prisma.factura.createMany({ data: dataToInsert });
-  }
+  const dataToInsert = (resultados || []).map(r => ({
+    proyectoId,
+    periodo,
+    archivo: r.archivo || null,
+    descripcion: r.descripcion || null,
+    numero_factura: r.numero_factura || null,
+    proveedor: r.proveedor || null,
+    rut: r.rut || null,
+    fecha: r.fecha || null,
+    monto: r.monto ? parseFloat(r.monto) : null,
+    moneda: r.moneda || null,
+    cantidad: r.cantidad ? parseInt(r.cantidad) : 1,
+    categoria: r.categoria || null,
+    rut_receptor: r.rut_receptor || null,
+    razon_social_receptor: r.razon_social_receptor || null,
+    tipo_comprobante: r.tipo_comprobante || null,
+    texto_extraido: Boolean(r.texto_extraido)
+  }));
+
+  await prisma.$transaction([
+    prisma.factura.deleteMany({ where: { proyectoId, periodo } }),
+    ...(dataToInsert.length > 0 ? [prisma.factura.createMany({ data: dataToInsert })] : []),
+  ]);
 }
 
 /** Read persisted results from db */
@@ -82,6 +83,89 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/upload', upload
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// POST  upload + process files (appends to existing results)
+router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/subir-y-procesar', upload.array('files'), async (req, res) => {
+  try {
+    const { empresaId, proyectoId, periodo } = req.params;
+    const folderPath = `proyectos/${empresaId}/${proyectoId}/${periodo}`;
+
+    const archivosData = [];
+    for (const file of (req.files || [])) {
+      if (!isSupported(file.originalname)) continue;
+      await supabaseService.uploadFile(`${folderPath}/${file.originalname}`, file.buffer, file.mimetype);
+      archivosData.push({ buffer: file.buffer, mimeType: getMimeType(file.originalname), filename: file.originalname });
+    }
+
+    if (!archivosData.length) {
+      return res.json(await leerResultadosDB(proyectoId, periodo));
+    }
+
+    const nuevos = await facturaService.analizarMultipleArchivos(archivosData);
+
+    if (nuevos.length > 0) {
+      await prisma.factura.createMany({
+        data: nuevos.map(r => ({
+          proyectoId,
+          periodo,
+          archivo: r.archivo || null,
+          descripcion: r.descripcion || null,
+          numero_factura: r.numero_factura || null,
+          proveedor: r.proveedor || null,
+          rut: r.rut || null,
+          fecha: r.fecha || null,
+          monto: r.monto ? parseFloat(r.monto) : null,
+          moneda: r.moneda || null,
+          cantidad: r.cantidad ? parseInt(r.cantidad) : 1,
+          categoria: r.categoria || null,
+          rut_receptor: r.rut_receptor || null,
+          razon_social_receptor: r.razon_social_receptor || null,
+          tipo_comprobante: r.tipo_comprobante || null,
+          texto_extraido: Boolean(r.texto_extraido),
+        })),
+      });
+    }
+
+    res.json(await leerResultadosDB(proyectoId, periodo));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST  reprocess specific files (returns new data without saving)
+router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/reprocesar', async (req, res) => {
+  try {
+    const { empresaId, proyectoId, periodo } = req.params;
+    const { archivos } = req.body;
+
+    if (!Array.isArray(archivos) || !archivos.length) {
+      return res.status(400).json({ error: 'archivos debe ser un array no vacío' });
+    }
+
+    const folderPath = `proyectos/${empresaId}/${proyectoId}/${periodo}`;
+    const archivosData = [];
+
+    for (const filename of archivos) {
+      try {
+        const buffer = await supabaseService.downloadFile(`${folderPath}/${filename}`);
+        archivosData.push({ buffer, mimeType: getMimeType(filename), filename });
+      } catch (e) {
+        console.warn(`No se pudo descargar ${filename}:`, e.message);
+      }
+    }
+
+    if (!archivosData.length) {
+      return res.status(404).json({ error: 'No se pudieron descargar los archivos indicados' });
+    }
+
+    const resultados = await facturaService.analizarMultipleArchivos(archivosData);
+    res.json(resultados);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
   }
 });
 
@@ -172,9 +256,22 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/excel', async (
     const nombre = `cuadro_inversiones_${empresaId}_${periodo}_${timestamp}.xlsx`;
     const ruta = path.join(TMP_DIR, nombre);
 
+    let cotizacion_usd = meta.cotizacion_usd;
+    let cotizacion_ui = meta.cotizacion_ui;
+    let fecha_cotizacion = meta.fecha_cotizacion || null;
+    if (!cotizacion_usd || !cotizacion_ui) {
+      try {
+        const cot = await cotizacionService.getCotizacionMesAnterior();
+        if (!cotizacion_usd) cotizacion_usd = cot.valor_usd;
+        if (!cotizacion_ui) cotizacion_ui = cot.valor_ui;
+        if (!fecha_cotizacion) fecha_cotizacion = cot.fecha;
+      } catch { }
+    }
+
     await excelService.generarExcelComap(resultados, ruta, {
-      cotizacion_usd: meta.cotizacion_usd,
-      cotizacion_ui: meta.cotizacion_ui,
+      cotizacion_usd,
+      cotizacion_ui,
+      fecha_cotizacion,
       fecha_presentacion: meta.fecha_presentacion,
       fecha_balance: fechaBalance,
     });
@@ -184,6 +281,88 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/excel', async (
       'Content-Disposition': `attachment; filename=${nombre}`,
     });
     res.send(fs.readFileSync(ruta));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET  download import template
+router.get('/empresas/:empresaId/proyectos/:proyectoId/:periodo/template-importar', async (_req, res) => {
+  try {
+    const ExcelJS = require('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    const ws = workbook.addWorksheet('Facturas');
+
+    ws.columns = [
+      { header: 'descripcion', key: 'descripcion', width: 35 },
+      { header: 'numero_factura', key: 'numero_factura', width: 15 },
+      { header: 'proveedor', key: 'proveedor', width: 25 },
+      { header: 'rut', key: 'rut', width: 14 },
+      { header: 'fecha', key: 'fecha', width: 16 },
+      { header: 'monto', key: 'monto', width: 14 },
+      { header: 'moneda (UYU o USD)', key: 'moneda', width: 16 },
+      { header: 'cantidad', key: 'cantidad', width: 10 },
+      { header: 'categoria', key: 'categoria', width: 28 },
+      { header: 'tipo_comprobante (Factura o Presupuesto)', key: 'tipo_comprobante', width: 32 },
+    ];
+    ws.getColumn(5).numFmt = 'DD/MM/YYYY';
+    ws.getRow(1).font = { bold: true };
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': 'attachment; filename=template_facturas.xlsx',
+    });
+    res.send(buffer);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST  import facturas from Excel
+router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/importar', upload.single('file'), async (req, res) => {
+  try {
+    const { proyectoId, periodo } = req.params;
+    if (!req.file?.buffer) return res.status(400).json({ error: 'No se recibió archivo' });
+
+    const ExcelJS = require('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(req.file.buffer);
+
+    const ws = workbook.worksheets[0];
+    const nuevas = [];
+
+    ws.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return;
+      const descripcion = row.getCell(1).text?.trim() || null;
+      const numero_factura = row.getCell(2).text?.trim() || null;
+      const proveedor = row.getCell(3).text?.trim() || null;
+      const rut = row.getCell(4).text?.trim() || null;
+      const fechaRaw = row.getCell(5).value;
+      const fecha = fechaRaw instanceof Date
+        ? formatearFecha(fechaRaw)
+        : (typeof fechaRaw === 'string' ? fechaRaw.trim() || null : null);
+      const montoRaw = row.getCell(6).value;
+      const monto = montoRaw != null && montoRaw !== '' ? parseFloat(montoRaw) : null;
+      const moneda = row.getCell(7).text?.trim() || null;
+      const cantidadRaw = row.getCell(8).value;
+      const cantidad = cantidadRaw != null && cantidadRaw !== '' ? parseInt(cantidadRaw) : 1;
+      const categoria = row.getCell(9).text?.trim() || null;
+      const tipo_comprobante = row.getCell(10).text?.trim() || null;
+
+      if (!descripcion && !numero_factura && !proveedor && !monto) return;
+
+      nuevas.push({
+        descripcion, numero_factura, proveedor, rut, fecha,
+        monto, moneda, cantidad, categoria, tipo_comprobante, texto_extraido: false,
+      });
+    });
+
+    const existentes = await leerResultadosDB(proyectoId, periodo);
+    await guardarResultadosDB(proyectoId, periodo, [...existentes, ...nuevas]);
+    const updated = await leerResultadosDB(proyectoId, periodo);
+    res.json(updated);
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message });

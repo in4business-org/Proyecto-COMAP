@@ -7,7 +7,7 @@ No agregues texto adicional.
 No agregues \`\`\`json.
 La respuesta debe ser solo JSON parseable.
 
-Debe haber un objeto por cada item de la factura.
+Debe haber un objeto por comprobante (factura), no por ítem.
 
 Usá exactamente esta estructura:
 [
@@ -15,24 +15,26 @@ Usá exactamente esta estructura:
     "descripcion": "string o null",
     "serie_numero_factura": "string o null",
     "fecha_comprobante": "DD/MM/YYYY o null",
-    "cantidad": number o null,
+    "cantidad": 1,
     "rut_emisor": "string o null",
     "razon_social_emisor": "string o null",
     "rut_receptor": "string o null",
     "razon_social_receptor": "string o null",
     "moneda": "$ | USD | null",
     "subtotal": number o null,
-    "categoria": "Maquinaria | Equipos | Instalaciones | Vehiculos | Materiales | Mano de Obra | Leyes Sociales | Honorarios | null"
+    "categoria": "Maquinaria | Equipos | Instalaciones | Vehiculos | Materiales | Mano de Obra | Leyes Sociales | Honorarios | null",
+    "tipo_comprobante": "Factura | Presupuesto | null"
   }
 ]
 
 
 Reglas generales:
-- Debe haber un objeto por cada item de la factura.
-- Repetí los datos generales de la factura en cada objeto.
+- Debe haber exactamente un objeto por comprobante (factura), sin importar cuántos ítems tenga.
+- En "descripcion" resumí brevemente el contenido de la factura (qué se compró o qué servicio fue).
+- En "subtotal" usá el total o subtotal de la factura completa, no el de un ítem individual.
 - No inventes datos.
 - Si un dato no se puede determinar con seguridad, devolvé null.
-- "cantidad" y "subtotal" deben ser numéricos, no strings.
+- "subtotal" debe ser numérico, no string.
 - Remové separadores de miles.
 - Usá punto como separador decimal.
 
@@ -85,6 +87,11 @@ Reglas para categoria:
 - Elegí la categoría más probable según la descripción del item y el contexto de la factura.
 - Si no es posible inferirla con suficiente confianza, devolver null.
 - No inventar categorías fuera de la lista.
+
+Reglas para tipo_comprobante:
+- Si el documento es una factura comercial (e-factura, factura, factura ticket, etc.), devolver "Factura".
+- Si el documento es un presupuesto, cotización o proforma, devolver "Presupuesto".
+- Si no se puede determinar con seguridad, devolver null.
 
 Validación final:
 - La salida debe ser JSON válido.

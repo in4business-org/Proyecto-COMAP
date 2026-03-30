@@ -34,6 +34,11 @@ const INVOICE_ITEM_SCHEMA = {
       enum: INVOICE_CATEGORIES_SCHEMA,
       nullable: true,
     },
+    tipo_comprobante: {
+      type: 'STRING',
+      enum: ['Factura', 'Presupuesto'],
+      nullable: true,
+    },
   },
   required: [
     'descripcion',
