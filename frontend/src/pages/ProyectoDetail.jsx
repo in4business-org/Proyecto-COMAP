@@ -448,7 +448,7 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
               <div key={label} className="bg-card border border-border/60 rounded-lg p-3">
                 <p className={cn('text-[14px] font-medium truncate', color || 'text-foreground')}>{val}</p>
                 <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mt-1">{label}</p>
-                {sub && <p className="text-[10px] text-muted-foreground/50 mt-0.5">{sub}</p>}
+                {sub && <p className="text-[11px] text-muted-foreground/70 mt-0.5">{sub}</p>}
               </div>
             ))}
           </div>
@@ -584,7 +584,7 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                     disabled={exporting || !results?.length}
                     variant="default"
                     size="sm"
-                    className="h-[28px] text-[11px] gap-1.5 bg-success hover:bg-success/90 text-success-foreground"
+                    className="h-[28px] text-[11px] gap-1.5 bg-[#22b86c] hover:bg-[#1aa35f] text-white"
                   >
                     {exporting ? <Spinner size={12} /> : <Download size={13} />}
                     Exportar COMAP
@@ -652,13 +652,13 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                 <span className="text-muted-foreground/60">Consultando BCU...</span>
               ) : cotizacion ? (
                 <>
-                  <span className="bg-card border border-border/60 rounded px-2 py-0.5 font-mono">
+                  <span className="bg-card border border-border/60 rounded px-2 py-0.5">
                     USD <span className="text-foreground font-semibold">${cotizacion.valor_usd.toFixed(2)}</span>
                   </span>
-                  <span className="bg-card border border-border/60 rounded px-2 py-0.5 font-mono">
+                  <span className="bg-card border border-border/60 rounded px-2 py-0.5">
                     UI <span className="text-foreground font-semibold">${cotizacion.valor_ui.toFixed(2)}</span>
                   </span>
-                  <span className="text-[10px] text-muted-foreground/50">al {cotizacion.fecha}</span>
+                  <span className="text-[11px] text-muted-foreground/70">al {cotizacion.fecha}</span>
                 </>
               ) : (
                 <span className="text-destructive/70 text-[11px]">Servicio BCU no disponible</span>
@@ -1087,7 +1087,7 @@ export default function ProyectoDetail() {
               <h1 className="text-xl font-medium truncate flex items-center gap-2">
                 {empresa?.nombre} <span className="text-muted-foreground/30">•</span> {meta?.expediente || meta?.fecha_presentacion || (meta?.fecha_creacion ? new Date(meta.fecha_creacion).toLocaleDateString() : 'Sin fecha')}
               </h1>
-              <p className="text-[13px] text-muted-foreground font-mono mt-0.5">
+              <p className="text-[13px] text-muted-foreground mt-0.5">
                 {empresa?.rut} · Presentación {meta?.anio_presentacion || '--'} {meta?.fecha_presentacion ? `· ${meta.fecha_presentacion}` : ''}
               </p>
             </div>
