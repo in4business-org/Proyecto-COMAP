@@ -240,8 +240,15 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
 
   const handleUpload = async () => {
     if (!files.length) return
-    setUploading(true)
     setUploadMsg('')
+    const isExcel = files.length === 1 && files[0].name.toLowerCase().endsWith('.xlsx')
+    if (isExcel) {
+      await handleImportMasivo(files[0])
+      setFiles([])
+      document.getElementById('factura-upload').value = ''
+      return
+    }
+    setUploading(true)
     try {
       const prevCount = results?.length || 0
       const updated = await factApi.uploadAndProcess(empresaId, proyectoId, activePeriodo, files)
@@ -278,8 +285,7 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
     } catch (err) { console.error(err) }
   }
 
-  const handleImportMasivo = async (e) => {
-    const file = e.target.files?.[0]
+  const handleImportMasivo = async (file) => {
     if (!file) return
     setImporting(true)
     try {
@@ -287,10 +293,12 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
       setResults(updated)
       setResultsCache(prev => ({ ...prev, [activePeriodo]: updated }))
       setPeriodoCounts(prev => ({ ...prev, [activePeriodo]: updated?.length || 0 }))
-    } catch (err) { console.error(err) }
-    finally {
+      setUploadMsg('Importación masiva completada')
+    } catch (err) {
+      console.error(err)
+      setUploadMsg('Error al importar el archivo')
+    } finally {
       setImporting(false)
-      e.target.value = ''
     }
   }
 
@@ -507,13 +515,22 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
             <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
               Archivos · {activePeriodo === 'presentacion' ? 'Presentación' : `Control ${activePeriodo.replace('control_', '')}`}
             </h2>
+            <Button
+              onClick={handleDownloadTemplate}
+              variant="outline"
+              size="sm"
+              className="h-[26px] text-[11px] gap-1.5"
+            >
+              <Download size={12} />
+              Template Excel
+            </Button>
           </div>
-          
+
           <div className="rounded-xl border-[1.5px] border-dashed border-border/60 p-8 text-center bg-card/10 hover:bg-primary/5 hover:border-primary/40 transition-colors group">
             <input
               type="file"
               multiple
-              accept=".pdf,.png,.jpg,.jpeg,.webp"
+              accept=".xlsx,.pdf,.png,.jpg,.jpeg,.webp"
               onChange={(e) => { setFiles([...e.target.files]); setUploadMsg('') }}
               className="hidden"
               id="factura-upload"
@@ -524,16 +541,21 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
               </div>
               <div>
                 <p className="text-[13px] font-medium text-foreground group-hover:text-primary transition-colors">
-                  {files.length > 0 ? `${files.length} archivo(s) seleccionados` : 'Arrastrá los PDFs o hacé clic para seleccionar'}
+                  {files.length > 0
+                    ? `${files.length} archivo(s) seleccionados`
+                    : 'Arrastrá archivos o hacé clic para seleccionar'}
                 </p>
-                <p className="text-[11px] text-muted-foreground mt-1">Solo archivos PDF o imágenes compatibles</p>
+                <p className="text-[11px] text-muted-foreground mt-1">PDF / imágenes (procesado por IA) · o Excel completo para importación masiva</p>
               </div>
             </label>
-            
+
             {files.length > 0 && (
               <div className="mt-5 flex justify-center">
-                <Button onClick={handleUpload} disabled={uploading} size="sm" className="h-[30px] px-6 text-[12px]">
-                  {uploading ? <><Spinner size={12} className="mr-2"/> Procesando...</> : 'Subir y procesar'}
+                <Button onClick={handleUpload} disabled={uploading || importing} size="sm" className="h-[30px] px-6 text-[12px]">
+                  {uploading ? <><Spinner size={12} className="mr-2"/> Procesando...</>
+                    : importing ? <><Spinner size={12} className="mr-2"/> Importando...</>
+                    : files.length === 1 && files[0].name.toLowerCase().endsWith('.xlsx') ? 'Importar Excel'
+                    : 'Subir y procesar'}
                 </Button>
               </div>
             )}
@@ -556,32 +578,6 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                     className="h-[28px] text-[11px] gap-1.5"
                   >
                     Editar
-                  </Button>
-                  <input
-                    type="file"
-                    accept=".xlsx"
-                    id="import-masivo"
-                    className="hidden"
-                    onChange={handleImportMasivo}
-                  />
-                  <Button
-                    onClick={handleDownloadTemplate}
-                    variant="outline"
-                    size="sm"
-                    className="h-[28px] text-[11px] gap-1.5"
-                  >
-                    <Download size={13} />
-                    Template
-                  </Button>
-                  <Button
-                    onClick={() => document.getElementById('import-masivo').click()}
-                    disabled={importing}
-                    variant="secondary"
-                    size="sm"
-                    className="h-[28px] text-[11px] gap-1.5 bg-background"
-                  >
-                    {importing ? <Spinner size={12} /> : <Upload size={13} />}
-                    Importar
                   </Button>
                   <Button
                     onClick={handleExport}
