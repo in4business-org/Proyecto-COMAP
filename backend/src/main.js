@@ -10,6 +10,7 @@ const proyectoRoutes = require('./modules/proyecto/proyecto.routes');
 const facturaRoutes = require('./modules/factura/factura.routes');
 const checklistRoutes = require('./modules/checklist/checklist.routes');
 const simuladorRoutes = require('./modules/simulador/simulador.routes');
+const cotizacionRoutes = require('./modules/cotizacion/cotizacion.routes');
 
 const app = express();
 
@@ -29,6 +30,7 @@ app.use('/api/empresas/:empresaId/proyectos', requireAuth, proyectoRoutes);
 app.use('/api', requireAuth, facturaRoutes);
 app.use('/api/empresas/:empresaId/proyectos/:proyectoId/checklist', requireAuth, checklistRoutes);
 app.use('/api/empresas/:empresaId/proyectos/:proyectoId/simulador', requireAuth, simuladorRoutes);
+app.use('/api/cotizaciones', requireAuth, cotizacionRoutes);
 
 // ── Health check ───────────────────────────────────────────
 app.get('/api/health', (_req, res) => {

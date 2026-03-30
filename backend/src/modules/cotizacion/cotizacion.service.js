@@ -37,21 +37,17 @@ async function fetchCotizacionBCU(codigoMoneda, fecha) {
     const xml = await response.text();
     const parsed = await parseStringPromise(xml, { explicitArray: false });
 
-    // Navegar hasta datoscotizaciones — ajustar según respuesta real de Postman
     const body = parsed?.['SOAP-ENV:Envelope']?.['SOAP-ENV:Body'];
-    const respuesta = body?.['wsbcucotizaciones.ExecuteResponse'];
-    const status = respuesta?.respuestastatus?.Status;
+    const salida = body?.['wsbcucotizaciones.ExecuteResponse']?.Salida;
+    const status = salida?.respuestastatus?.status;
 
-    if (status !== 'OK') return null;
+    console.log(`[BCU] moneda=${codigoMoneda} fecha=${fechaStr} status=${status} codigoerror=${salida?.respuestastatus?.codigoerror} mensaje=${salida?.respuestastatus?.mensaje}`);
 
-    const item = respuesta?.datoscotizaciones?.item;
-    if (!item) return null;
-
-    // Puede venir como array o como objeto único
-    const items = Array.isArray(item) ? item : [item];
-    if (items.length === 0) return null;
-
-    return parseFloat(items[0].TCV);
+    const item = salida?.datoscotizaciones?.['datoscotizaciones.dato'];
+    const items = item ? (Array.isArray(item) ? item : [item]) : [];
+    const valor = items.length > 0 ? parseFloat(items[0].TCV) : 0;
+    console.log(`[BCU] moneda=${codigoMoneda} fecha=${fechaStr} TCV=${valor}`);
+    return valor > 0 ? valor : null;
 }
 
 // Busca hacia atrás hasta encontrar un día con cotización
@@ -67,10 +63,10 @@ async function fetchUltimoDiaHabilBCU(codigoMoneda, fechaBase) {
     throw new Error(`No se encontró cotización para moneda ${codigoMoneda} en los últimos 10 días`);
 }
 
-// Devuelve el último día del mes anterior como objeto Date
-function getUltimoDiaMesAnterior() {
-    const hoy = new Date();
-    return new Date(hoy.getFullYear(), hoy.getMonth(), 0);
+// Devuelve el último día del mes anterior a la fecha dada (o hoy si no se pasa)
+function getUltimoDiaMesAnterior(fechaRef) {
+    const base = fechaRef ? new Date(fechaRef) : new Date();
+    return new Date(base.getFullYear(), base.getMonth(), 0);
 }
 
 // Formatea fecha como YYYY-MM-DD para comparar con la BD
@@ -80,8 +76,8 @@ function formatFecha(date) {
 
 class CotizacionService {
 
-    async getCotizacionMesAnterior() {
-        const ultimoDia = getUltimoDiaMesAnterior();
+    async getCotizacionMesAnterior(fechaRef) {
+        const ultimoDia = getUltimoDiaMesAnterior(fechaRef);
         const fechaKey = formatFecha(ultimoDia); // ej: "2026-02-28"
 
         // 1. Buscar en BD
@@ -106,6 +102,7 @@ class CotizacionService {
             valor_ui = null;
         }
 
+        console.log(`[BCU] valor_usd=${valor_usd} valor_ui=${valor_ui}`);
         if (valor_usd === null && valor_ui === null) {
             throw new Error('Servicio BCU no disponible');
         }

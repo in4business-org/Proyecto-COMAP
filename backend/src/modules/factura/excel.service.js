@@ -113,15 +113,15 @@ class ExcelService {
     // L = subtotal
     ws.getCell(rowNumber, 12).value = subtotal;
 
-    // M = formula: L * $C$5
-    ws.getCell(rowNumber, 13).value =
-    {
-      formula: `L${rowNumber}*$C$5`,
-    };
+    // M = monto en UI: si USD → subtotal*C4/C5, si UYU → subtotal/C5
+    const formula = moneda === 'USD'
+      ? `L${rowNumber}*$C$4/$C$5`
+      : `L${rowNumber}/$C$5`;
+    ws.getCell(rowNumber, 13).value = { formula };
   }
 
   async generarExcelComap(facturas, rutaSalida, opciones = {}) {
-    const { cotizacion_usd, cotizacion_ui, sheetName } = opciones;
+    const { cotizacion_usd, cotizacion_ui, fecha_cotizacion, fecha_presentacion, fecha_balance, sheetName } = opciones;
 
     if (!fs.existsSync(TEMPLATE_CUADRO)) {
       throw new Error(`Template not found: ${TEMPLATE_CUADRO}`);
@@ -144,12 +144,24 @@ class ExcelService {
       throw new Error('No se encontró la hoja a procesar');
     }
 
+    if (fecha_cotizacion) {
+      ws.getCell(3, 3).value = normalizarFecha(fecha_cotizacion);
+    }
+
     if (cotizacion_usd) {
       ws.getCell(4, 3).value = parseFloat(cotizacion_usd);
     }
 
     if (cotizacion_ui) {
       ws.getCell(5, 3).value = parseFloat(cotizacion_ui);
+    }
+
+    if (fecha_balance) {
+      ws.getCell(6, 3).value = normalizarFecha(fecha_balance);
+    }
+
+    if (fecha_presentacion) {
+      ws.getCell(7, 3).value = normalizarFecha(fecha_presentacion);
     }
 
     const sortedFacturas = this.sortFacturasForInsert(facturas);
@@ -169,6 +181,7 @@ class ExcelService {
       this.writeFacturaRow(ws, rowNumber, factura);
     }
 
+    workbook.calcProperties = { fullCalcOnLoad: true };
     await workbook.xlsx.writeFile(rutaSalida);
     return rutaSalida;
   }

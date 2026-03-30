@@ -75,7 +75,16 @@ model Factura {
   categoria             String?
   rut_receptor          String?
   razon_social_receptor String?
+  tipo_comprobante      String?
   texto_extraido        Boolean   @default(false)
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
+}
+
+model Cotizacion {
+  id        String   @id
+  fecha     String   @unique
+  valor_ui  Float
+  valor_usd Float
+  createdAt DateTime @default(now())
 }

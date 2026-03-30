@@ -66,6 +66,11 @@ export const facturas = {
     files.forEach(f => fd.append('files', f));
     return request(`/empresas/${empresaId}/proyectos/${proyectoId}/${periodo}/upload`, { method: 'POST', body: fd });
   },
+  uploadAndProcess: (empresaId, proyectoId, periodo, files) => {
+    const fd = new FormData();
+    files.forEach(f => fd.append('files', f));
+    return request(`/empresas/${empresaId}/proyectos/${proyectoId}/${periodo}/subir-y-procesar`, { method: 'POST', body: fd });
+  },
   getResults: (empresaId, proyectoId, periodo) =>
     request(`/empresas/${empresaId}/proyectos/${proyectoId}/${periodo}/resultados`),
   analyze: (empresaId, proyectoId, periodo) =>
@@ -78,11 +83,23 @@ export const facturas = {
     files.forEach(f => fd.append('files', f));
     return request('/simple/upload', { method: 'POST', body: fd });
   },
+  reprocesar: (empresaId, proyectoId, periodo, archivos) =>
+    request(`/empresas/${empresaId}/proyectos/${proyectoId}/${periodo}/reprocesar`, {
+      method: 'POST',
+      body: JSON.stringify({ archivos }),
+    }),
   updateResults: (empresaId, proyectoId, periodo, results) =>
     request(`/empresas/${empresaId}/proyectos/${proyectoId}/${periodo}`, {
       method: 'PUT',
       body: JSON.stringify({ results }),
     }),
+  downloadTemplate: (empresaId, proyectoId, periodo) =>
+    request(`/empresas/${empresaId}/proyectos/${proyectoId}/${periodo}/template-importar`),
+  importar: (empresaId, proyectoId, periodo, file) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return request(`/empresas/${empresaId}/proyectos/${proyectoId}/${periodo}/importar`, { method: 'POST', body: fd });
+  },
   simpleGetResults: () => request('/simple/resultados'),
   simpleAnalyze: () => request('/simple/analizar'),
   simpleExcel: () => request('/simple/excel'),
@@ -109,6 +126,11 @@ export const checklist = {
   },
   downloadFile: (empresaId, proyectoId, itemId) =>
     request(`/empresas/${empresaId}/proyectos/${proyectoId}/checklist/${itemId}/archivo`),
+};
+
+// -- Cotizaciones
+export const cotizaciones = {
+  getMesAnterior: (fecha) => request(`/cotizaciones/mes-anterior${fecha ? `?fecha=${encodeURIComponent(fecha)}` : ''}`),
 };
 
 // -- Simulador
