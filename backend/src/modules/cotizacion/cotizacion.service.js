@@ -63,10 +63,10 @@ async function fetchUltimoDiaHabilBCU(codigoMoneda, fechaBase) {
     throw new Error(`No se encontró cotización para moneda ${codigoMoneda} en los últimos 10 días`);
 }
 
-// Devuelve el último día del mes anterior como objeto Date
-function getUltimoDiaMesAnterior() {
-    const hoy = new Date();
-    return new Date(hoy.getFullYear(), hoy.getMonth(), 0);
+// Devuelve el último día del mes anterior a la fecha dada (o hoy si no se pasa)
+function getUltimoDiaMesAnterior(fechaRef) {
+    const base = fechaRef ? new Date(fechaRef) : new Date();
+    return new Date(base.getFullYear(), base.getMonth(), 0);
 }
 
 // Formatea fecha como YYYY-MM-DD para comparar con la BD
@@ -76,8 +76,8 @@ function formatFecha(date) {
 
 class CotizacionService {
 
-    async getCotizacionMesAnterior() {
-        const ultimoDia = getUltimoDiaMesAnterior();
+    async getCotizacionMesAnterior(fechaRef) {
+        const ultimoDia = getUltimoDiaMesAnterior(fechaRef);
         const fechaKey = formatFecha(ultimoDia); // ej: "2026-02-28"
 
         // 1. Buscar en BD

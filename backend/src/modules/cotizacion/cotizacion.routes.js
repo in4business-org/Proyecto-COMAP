@@ -6,7 +6,7 @@ const router = Router();
 // Obtener cotización del mes anterior (con fallback al BCU)
 router.get('/mes-anterior', async (req, res) => {
     try {
-        const data = await cotizacionService.getCotizacionMesAnterior();
+        const data = await cotizacionService.getCotizacionMesAnterior(req.query.fecha || null);
         res.json(data);
     } catch (err) {
         res.status(503).json({ error: err.message });

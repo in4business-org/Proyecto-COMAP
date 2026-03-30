@@ -130,7 +130,7 @@ export const checklist = {
 
 // -- Cotizaciones
 export const cotizaciones = {
-  getMesAnterior: () => request('/cotizaciones/mes-anterior'),
+  getMesAnterior: (fecha) => request(`/cotizaciones/mes-anterior${fecha ? `?fecha=${encodeURIComponent(fecha)}` : ''}`),
 };
 
 // -- Simulador

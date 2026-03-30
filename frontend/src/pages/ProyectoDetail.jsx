@@ -95,13 +95,13 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
     setEditedResults(results || [])
   }, [results])
 
-  // Load cotización del mes anterior
+  // Load cotización del mes anterior a la fecha de presentación (o hoy si no está definida)
   useEffect(() => {
-    cotApi.getMesAnterior()
+    cotApi.getMesAnterior(meta?.fecha_presentacion || null)
       .then(setCotizacion)
       .catch(() => setCotizacion(null))
       .finally(() => setLoadingCotizacion(false))
-  }, [])
+  }, [meta?.fecha_presentacion])
 
   // Load persisted results for current periodo
   useEffect(() => {
