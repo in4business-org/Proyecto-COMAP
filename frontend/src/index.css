@@ -39,29 +39,28 @@
    DARK MODE — .dark on <html>
    ============================================================ */
 .dark {
-  --background: #0f0f13;
-  --foreground: #fafafa;
-  --card: #15151a;
-  --card-foreground: #fafafa;
-  --popover: #18181e;
-  --popover-foreground: #fafafa;
+  --background: #1a1a1a;
+  --foreground: #e8e8e8;
+  --card: #242424;
+  --card-foreground: #e8e8e8;
+  --popover: #242424;
+  --popover-foreground: #e8e8e8;
 
-  /* Brand blue — lighter in dark mode for contrast */
-  --primary: #8aa0fa;
-  --primary-foreground: #0f0f13;
+  --primary: #4f7ef5;
+  --primary-foreground: #ffffff;
 
-  --secondary: #1a1a21;
-  --secondary-foreground: #fafafa;
-  --muted: #1d1d25;
-  --muted-foreground: #9494a8;
-  --accent: #23232c;
-  --accent-foreground: #fafafa;
+  --secondary: #2e2e2e;
+  --secondary-foreground: #e8e8e8;
+  --muted: #2e2e2e;
+  --muted-foreground: #666666;
+  --accent: #2e2e2e;
+  --accent-foreground: #e8e8e8;
 
   --destructive: #f87171;
-  --destructive-foreground: #fafafa;
-  --border: #222233;
-  --input: #222233;
-  --ring: #8aa0fa;
+  --destructive-foreground: #ffffff;
+  --border: #333333;
+  --input: #333333;
+  --ring: #4f7ef5;
 
   --success: #34d399;
   --warning: #fbbf24;
