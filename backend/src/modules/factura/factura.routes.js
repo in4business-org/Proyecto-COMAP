@@ -45,32 +45,54 @@ function calcularFechaEjecucion(tipoComprobante, fechaFactura, fechaPresentacion
   return null;
 }
 
-/** Save results to database */
+/** Save results to database (upsert by id to preserve updatedAt per-row) */
 async function guardarResultadosDB(proyectoId, periodo, resultados) {
-  const dataToInsert = (resultados || []).map(r => ({
-    proyectoId,
-    periodo,
-    archivo: r.archivo || null,
-    descripcion: r.descripcion || null,
-    numero_factura: r.numero_factura || null,
-    proveedor: r.proveedor || null,
-    rut: r.rut || null,
-    fecha: r.fecha || null,
-    monto: r.monto ? parseFloat(r.monto) : null,
-    moneda: r.moneda || null,
-    cantidad: r.cantidad ? parseInt(r.cantidad) : 1,
-    categoria: r.categoria || null,
-    rut_receptor: r.rut_receptor || null,
-    razon_social_receptor: r.razon_social_receptor || null,
-    tipo_comprobante: r.tipo_comprobante || null,
-    fecha_ejecucion: r.fecha_ejecucion || null,
-    texto_extraido: Boolean(r.texto_extraido)
-  }));
+  const incoming = resultados || [];
+  const incomingIds = incoming.map(r => r.id).filter(Boolean);
 
-  await prisma.$transaction([
-    prisma.factura.deleteMany({ where: { proyectoId, periodo } }),
-    ...(dataToInsert.length > 0 ? [prisma.factura.createMany({ data: dataToInsert })] : []),
-  ]);
+  // Delete rows that were removed (had an id before, not present now)
+  await prisma.$transaction(async (tx) => {
+    // Remove rows not in incoming list
+    await tx.factura.deleteMany({
+      where: {
+        proyectoId,
+        periodo,
+        ...(incomingIds.length > 0 ? { id: { notIn: incomingIds } } : {}),
+      }
+    });
+
+    for (const r of incoming) {
+      const data = {
+        proyectoId,
+        periodo,
+        archivo: r.archivo || null,
+        descripcion: r.descripcion || null,
+        numero_factura: r.numero_factura || null,
+        proveedor: r.proveedor || null,
+        rut: r.rut || null,
+        fecha: r.fecha || null,
+        monto: r.monto ? parseFloat(r.monto) : null,
+        moneda: r.moneda || null,
+        cantidad: r.cantidad ? parseInt(r.cantidad) : 1,
+        categoria: r.categoria || null,
+        rut_receptor: r.rut_receptor || null,
+        razon_social_receptor: r.razon_social_receptor || null,
+        tipo_comprobante: r.tipo_comprobante || null,
+        fecha_ejecucion: r.fecha_ejecucion || null,
+        texto_extraido: Boolean(r.texto_extraido),
+      };
+
+      if (r.id) {
+        await tx.factura.upsert({
+          where: { id: r.id },
+          update: data,
+          create: { id: r.id, ...data },
+        });
+      } else {
+        await tx.factura.create({ data });
+      }
+    }
+  });
 }
 
 /** Read persisted results from db */
