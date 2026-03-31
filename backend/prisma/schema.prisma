@@ -41,6 +41,8 @@ model Proyecto {
   facturas             Factura[]
   createdAt            DateTime   @default(now())
   updatedAt            DateTime   @updatedAt
+
+  @@index([empresaId])
 }
 
 model ChecklistItem {
@@ -80,6 +82,8 @@ model Factura {
   texto_extraido        Boolean   @default(false)
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
+
+  @@index([proyectoId, periodo])
 }
 
 model Cotizacion {
