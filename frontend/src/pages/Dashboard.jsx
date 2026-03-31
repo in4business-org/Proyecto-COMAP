@@ -1,6 +1,11 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { empresas as empApi, proyectos as projApi } from '@/lib/api'
+
+// Module-level cache: volver al Dashboard reutiliza los datos sin re-fetch
+let _dashCache = null;
+let _dashCacheTime = 0;
+const DASH_TTL = 3 * 60 * 1000; // 3 minutos
 import { Building2, FolderOpen, AlertCircle, Calendar, Clock, ChevronRight } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
@@ -36,6 +41,13 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    const now = Date.now()
+    if (_dashCache && (now - _dashCacheTime) < DASH_TTL) {
+      setEmpresas(_dashCache.empresas)
+      setProyectosMap(_dashCache.proyectosMap)
+      setLoading(false)
+      return
+    }
     empApi.list()
       .then(async (emps) => {
         setEmpresas(emps)
@@ -46,6 +58,8 @@ export default function Dashboard() {
         results.forEach(r => {
           if (r.status === 'fulfilled') map[r.value.empId] = r.value.projs
         })
+        _dashCache = { empresas: emps, proyectosMap: map }
+        _dashCacheTime = Date.now()
         setProyectosMap(map)
       })
       .catch(console.error)

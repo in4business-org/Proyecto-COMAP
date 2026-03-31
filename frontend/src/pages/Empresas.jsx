@@ -11,6 +11,7 @@ export default function Empresas() {
   const [empresas, setEmpresas] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [form, setForm] = useState({ rut: '', nombre: '' })
@@ -22,8 +23,13 @@ export default function Empresas() {
 
   useEffect(() => { load() }, [])
 
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 250)
+    return () => clearTimeout(timer)
+  }, [search])
+
   const filtered = empresas.filter((e) =>
-    `${e.nombre} ${e.rut}`.toLowerCase().includes(search.toLowerCase())
+    `${e.nombre} ${e.rut}`.toLowerCase().includes(debouncedSearch.toLowerCase())
   )
 
   const handleCreate = async () => {
@@ -60,6 +66,7 @@ export default function Empresas() {
             placeholder="Buscar..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            aria-label="Buscar empresa por nombre o RUT"
             className="pl-8 max-w-xs h-9 text-sm"
           />
         </div>
@@ -123,12 +130,12 @@ export default function Empresas() {
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">RUT</label>
-              <Input placeholder="123456789012" value={form.rut} onChange={(e) => setForm({ ...form, rut: e.target.value })} />
+              <label htmlFor="empresa-rut" className="text-xs font-medium text-muted-foreground">RUT</label>
+              <Input id="empresa-rut" placeholder="123456789012" value={form.rut} onChange={(e) => setForm({ ...form, rut: e.target.value })} />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Nombre</label>
-              <Input placeholder="Nombre de la empresa" value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} />
+              <label htmlFor="empresa-nombre" className="text-xs font-medium text-muted-foreground">Nombre</label>
+              <Input id="empresa-nombre" placeholder="Nombre de la empresa" value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} />
             </div>
           </div>
           <DialogFooter>

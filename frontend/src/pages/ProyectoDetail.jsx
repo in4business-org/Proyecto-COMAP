@@ -277,21 +277,21 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
       .finally(() => setLoadingResults(false))
   }, [empresaId, proyectoId, activePeriodo])
 
-  // Fetch counts for all periodos for the grid
+  // Fetch counts for all periodos for the grid (in parallel)
   useEffect(() => {
-    const fetchCounts = async () => {
+    Promise.allSettled(
+      periodos.map(p =>
+        factApi.getResults(empresaId, proyectoId, p)
+          .then(data => ({ p, count: data && data.length ? data.length : 0 }))
+          .catch(() => ({ p, count: 0 }))
+      )
+    ).then(results => {
       const counts = {}
-      for (const p of periodos) {
-        try {
-          const data = await factApi.getResults(empresaId, proyectoId, p)
-          counts[p] = data && data.length ? data.length : 0
-        } catch (e) {
-          counts[p] = 0
-        }
-      }
+      results.forEach(r => {
+        if (r.status === 'fulfilled') counts[r.value.p] = r.value.count
+      })
       setPeriodoCounts(counts)
-    }
-    fetchCounts()
+    })
   }, [empresaId, proyectoId, periodos])
 
   const handleEditToggle = () => {
@@ -301,7 +301,7 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
       setIsEditing(false)
       return
     }
-    setEditedResults(sortedResults(results || []))
+    setEditedResults(sortedDisplayResults || results || [])
     setSelectedRows([])
     setIsEditing(true)
   }
@@ -538,7 +538,8 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
     }
   }
 
-  const sortedResults = (arr) => {
+  const sortedDisplayResults = useMemo(() => {
+    const arr = isEditing ? editedResults : results
     if (!sortField || !arr) return arr
     return [...arr].sort((a, b) => {
       const av = a[sortField] ?? ''
@@ -548,7 +549,7 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
         : String(av).localeCompare(String(bv))
       return sortDir === 'asc' ? cmp : -cmp
     })
-  }
+  }, [results, editedResults, isEditing, sortField, sortDir])
 
   const anioBase = meta?.anio_presentacion ? parseInt(meta.anio_presentacion) : new Date().getFullYear()
 
@@ -1058,7 +1059,7 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                       </tr>
                     </thead>
                     <tbody className={cn(isEditing ? "" : "divide-y divide-border/50")}>
-                      {sortedResults(isEditing ? editedResults : results).map((r, i) => {
+                      {(sortedDisplayResults || []).map((r, i) => {
                         const completado = r.proveedor && r.fecha && r.monto
                         const cellEdit = "p-0 border-r border-b border-border/25 last:border-r-0"
                         const inputEdit = "w-full min-h-[34px] bg-transparent text-foreground px-2 py-1 text-[12px] outline-none focus:bg-primary/5 placeholder:text-muted-foreground/40"

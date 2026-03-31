@@ -24,6 +24,16 @@ const settingsNav = [
   { name: 'Organización', href: '/settings/organization', icon: Users },
 ]
 
+// Module-level cache: persists across re-mounts (every page navigation re-mounts Layout)
+let empresasCache = null
+let empresasCacheTime = 0
+const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+
+export function clearEmpresasCache() {
+  empresasCache = null
+  empresasCacheTime = 0
+}
+
 export function Sidebar() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(() => {
@@ -39,7 +49,18 @@ export function Sidebar() {
   const [expandedEmpresa, setExpandedEmpresa] = useState(null)
 
   useEffect(() => {
-    empApi.list().then(setEmpresas).catch(console.error)
+    const now = Date.now()
+    if (empresasCache && (now - empresasCacheTime) < CACHE_TTL) {
+      setEmpresas(empresasCache)
+      return
+    }
+    empApi.list()
+      .then(data => {
+        empresasCache = data
+        empresasCacheTime = Date.now()
+        setEmpresas(data)
+      })
+      .catch(console.error)
   }, [])
 
   useEffect(() => {
@@ -106,14 +127,16 @@ export function Sidebar() {
       {/* Mobile hamburger */}
       <button
         onClick={() => setMobileOpen(true)}
+        aria-label="Abrir menú de navegación"
         className="fixed top-4 left-4 z-50 rounded-lg bg-card border border-border p-2 text-foreground lg:hidden cursor-pointer"
       >
-        <Menu size={18} />
+        <Menu size={18} aria-hidden="true" />
       </button>
 
       {/* Mobile overlay */}
       {mobileOpen && (
         <div
+          aria-hidden="true"
           className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm lg:hidden"
           onClick={() => setMobileOpen(false)}
         />
@@ -142,16 +165,17 @@ export function Sidebar() {
           )}
           <button
             onClick={toggleCollapsed}
-            title={collapsed ? 'Expandir panel' : 'Colapsar panel'}
+            aria-label={collapsed ? 'Expandir panel lateral' : 'Colapsar panel lateral'}
             className="hidden lg:flex p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer shrink-0"
           >
-            {collapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
+            {collapsed ? <PanelLeftOpen size={15} aria-hidden="true" /> : <PanelLeftClose size={15} aria-hidden="true" />}
           </button>
           <button
             onClick={() => setMobileOpen(false)}
+            aria-label="Cerrar menú de navegación"
             className="lg:hidden p-1.5 text-muted-foreground hover:text-foreground cursor-pointer"
           >
-            <X size={16} />
+            <X size={16} aria-hidden="true" />
           </button>
         </div>
 
@@ -365,10 +389,10 @@ export function Sidebar() {
             )}
             <button
               onClick={toggleTheme}
-              title={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+              aria-label={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
               className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer shrink-0"
             >
-              {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
+              {theme === 'dark' ? <Sun size={14} aria-hidden="true" /> : <Moon size={14} aria-hidden="true" />}
             </button>
           </div>
         </div>

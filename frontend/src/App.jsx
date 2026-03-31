@@ -1,22 +1,25 @@
+import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import { ThemeProvider } from './context/ThemeContext'
 import { ProtectedRoute } from './components/ProtectedRoute'
-import Login from './pages/Login'
 import { Layout } from './components/layout/Layout'
-import Dashboard from './pages/Dashboard'
-import Empresas from './pages/Empresas'
-import EmpresaDetail from './pages/EmpresaDetail'
-import ProyectoDetail from './pages/ProyectoDetail'
-import UserSettings from './pages/UserSettings'
-import OrgSettings from './pages/OrgSettings'
-import InboxPage from './pages/Inbox'
+
+const Login = lazy(() => import('./pages/Login'))
+const Dashboard = lazy(() => import('./pages/Dashboard'))
+const Empresas = lazy(() => import('./pages/Empresas'))
+const EmpresaDetail = lazy(() => import('./pages/EmpresaDetail'))
+const ProyectoDetail = lazy(() => import('./pages/ProyectoDetail'))
+const UserSettings = lazy(() => import('./pages/UserSettings'))
+const OrgSettings = lazy(() => import('./pages/OrgSettings'))
+const InboxPage = lazy(() => import('./pages/Inbox'))
 
 export default function App() {
   return (
     <ThemeProvider>
     <AuthProvider>
       <BrowserRouter>
+        <Suspense fallback={null}>
         <Routes>
           <Route path="/login" element={<Login />} />
           
@@ -33,6 +36,7 @@ export default function App() {
             </Route>
           </Route>
         </Routes>
+        </Suspense>
       </BrowserRouter>
     </AuthProvider>
     </ThemeProvider>
