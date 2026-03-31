@@ -295,21 +295,21 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
   }, [empresaId, proyectoId, periodos])
 
   const handleEditToggle = () => {
-  if (isEditing) {
-    setEditedResults(results || [])
+    if (isEditing) {
+      setEditedResults(results || [])
+      setSelectedRows([])
+      setIsEditing(false)
+      return
+    }
+    setEditedResults(sortedResults(results || []))
     setSelectedRows([])
-    setIsEditing(false)
-    return
+    setIsEditing(true)
   }
-  setEditedResults(results || [])
-  setSelectedRows([])
-  setIsEditing(true)
-}
 
-  const handleFieldChange = (index, field, value) => {
+  const handleFieldChange = (id, field, value) => {
     setEditedResults(current =>
-      current.map((item, i) =>
-        i === index
+      current.map(item =>
+        item.id === id
           ? {
               ...item,
               [field]:
@@ -345,11 +345,11 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
     }
   }
 
-  const handleToggleRow = (index) => {
+  const handleToggleRow = (id) => {
     setSelectedRows((current) =>
-      current.includes(index)
-        ? current.filter((i) => i !== index)
-        : [...current, index]
+      current.includes(id)
+        ? current.filter((x) => x !== id)
+        : [...current, id]
     )
   }
 
@@ -358,28 +358,25 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
       setSelectedRows([])
       return
     }
-    setSelectedRows(editedResults.map((_, index) => index))
+    setSelectedRows(editedResults.map((r) => r.id))
   }
 
   const handleDeleteSelected = () => {
     if (!selectedRows.length) return
-
-    setEditedResults((current) =>
-      current.filter((_, index) => !selectedRows.includes(index))
-    )
+    setEditedResults((current) => current.filter((r) => !selectedRows.includes(r.id)))
     setSelectedRows([])
   }
 
   const handleReprocesarSeleccionadas = async () => {
     const archivos = selectedRows
-      .map(i => editedResults[i]?.archivo)
+      .map(id => editedResults.find(r => r.id === id)?.archivo)
       .filter(Boolean)
     if (!archivos.length) return
     setReprocesando(true)
     try {
       const nuevos = await factApi.reprocesar(empresaId, proyectoId, activePeriodo, archivos)
       setEditedResults(current => [
-        ...current.filter((_, i) => !selectedRows.includes(i)),
+        ...current.filter((r) => !selectedRows.includes(r.id)),
         ...nuevos,
       ])
       setSelectedRows([])
@@ -469,6 +466,10 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
   const [sortField, setSortField] = useState('numero_factura')
   const [sortDir, setSortDir] = useState('desc')
   const [sortOpen, setSortOpen] = useState(false)
+  const [activeView, setActiveView] = useState('list')
+  const [planDirty, setPlanDirty] = useState(false)
+  const [planSaving, setPlanSaving] = useState(false)
+  const [dragOverCol, setDragOverCol] = useState(null)
 
   const toUI = useCallback((monto, moneda) => {
     if (monto == null || !cotizacion) return null
@@ -499,28 +500,21 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
       .sort((a, b) => b[1] - a[1])
       .map(([cat, ui]) => ({ cat, ui }))
 
-    const mesMap = {}
+    const anioMap = {}
     withMonto.forEach(f => {
       const parts = (f.fecha || '').split('/')
       if (parts.length === 3) {
-        const key = `${parts[2]}-${parts[1]}`
-        if (!mesMap[key]) mesMap[key] = { mes: key, factura: 0, presupuesto: 0 }
+        const key = parts[2]
+        if (!anioMap[key]) anioMap[key] = { anio: key, factura: 0, presupuesto: 0 }
         const ui = toUI(f.monto, f.moneda) ?? 0
-        if (f.tipo_comprobante === 'Factura') mesMap[key].factura += ui
-        else mesMap[key].presupuesto += ui
+        if (f.tipo_comprobante === 'Factura') anioMap[key].factura += ui
+        else anioMap[key].presupuesto += ui
       }
     })
-    const porMes = Object.values(mesMap).sort((a, b) => a.mes.localeCompare(b.mes))
-      .map(d => ({
-        ...d,
-        label: (() => {
-          const [y, m] = d.mes.split('-')
-          const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
-          return `${meses[parseInt(m, 10) - 1]} ${y.slice(2)}`
-        })()
-      }))
+    const porAnio = Object.values(anioMap).sort((a, b) => a.anio.localeCompare(b.anio))
+      .map(d => ({ ...d, label: d.anio }))
 
-    return { totalUI, facturaUI, presupuestoUI, porCategoria, porMes, total: results.length, conMonto: withMonto.length }
+    return { totalUI, facturaUI, presupuestoUI, porCategoria, porAnio, total: results.length, conMonto: withMonto.length }
   }, [results, cotizacion, toUI])
 
   const SORT_OPTIONS = [
@@ -531,6 +525,7 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
     { label: 'Moneda', field: 'moneda' },
     { label: 'Categoría', field: 'categoria' },
     { label: 'Tipo', field: 'tipo_comprobante' },
+    { label: 'Año Ejec.', field: 'fecha_ejecucion' },
     { label: 'Actualización', field: 'updatedAt' },
   ]
 
@@ -553,6 +548,66 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
         : String(av).localeCompare(String(bv))
       return sortDir === 'asc' ? cmp : -cmp
     })
+  }
+
+  const anioBase = meta?.anio_presentacion ? parseInt(meta.anio_presentacion) : new Date().getFullYear()
+
+  // Investment year columns derived from periodos: each control_YYYY → investment year YYYY-1
+  const planColumns = useMemo(() => {
+    const controlYears = periodos
+      .filter(p => p.startsWith('control_'))
+      .map(p => parseInt(p.replace('control_', '')) - 1)
+      .sort((a, b) => a - b)
+    const years = controlYears.length > 0 ? controlYears : [anioBase, anioBase + 1, anioBase + 2]
+    return [
+      { key: 'antes', label: 'Antes de presentación', sub: 'Facturas emitidas', locked: true },
+      ...years.map((y, i) => ({
+        key: String(y),
+        label: String(y),
+        sub: i === 0 ? 'Año de presentación · después de presentación' : null,
+        locked: false,
+      })),
+    ]
+  }, [periodos, anioBase])
+
+  const yearOptions = useMemo(() => {
+    const cols = planColumns.filter(c => !c.locked)
+    if (cols.length > 0) return [{ v: '', l: '--' }, ...cols.map(c => ({ v: c.key, l: c.label }))]
+    return [{ v: '', l: '--' }, ...Array.from({ length: 4 }, (_, i) => ({ v: String(anioBase + i), l: String(anioBase + i) }))]
+  }, [planColumns, anioBase])
+
+  const getItemColumn = (item) => {
+    if (item.tipo_comprobante === 'Factura') return 'antes'
+    if (!item.fecha_ejecucion) return String(anioBase)
+    const year = parseInt(item.fecha_ejecucion.substring(0, 4))
+    // clamp to first available year column
+    const available = planColumns.filter(c => !c.locked).map(c => parseInt(c.key))
+    if (!available.length) return String(anioBase)
+    if (year < available[0]) return String(available[0])
+    if (year > available[available.length - 1]) return String(available[available.length - 1])
+    return String(year)
+  }
+
+  const handlePlanDrop = (e, colKey) => {
+    e.preventDefault()
+    setDragOverCol(null)
+    if (colKey === 'antes') return
+    const itemId = e.dataTransfer.getData('text/plain')
+    if (!itemId || !results) return
+    setResults(prev => prev.map(r => r.id === itemId ? { ...r, fecha_ejecucion: `${colKey}-01-01` } : r))
+    setKanbanDirty(true)
+  }
+
+  const handlePlanSave = async () => {
+    if (!results || planSaving) return
+    setKanbanSaving(true)
+    try {
+      const saved = await factApi.updateResults(empresaId, proyectoId, activePeriodo, results)
+      setResults(saved)
+      setResultsCache(prev => ({ ...prev, [activePeriodo]: saved }))
+      setKanbanDirty(false)
+    } catch (err) { console.error(err) }
+    finally { setKanbanSaving(false) }
   }
 
   return (
@@ -605,12 +660,12 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
             ))}
           </div>
 
-          {/* Gráfico de inversión mensual */}
-          {kpis.porMes.length > 0 && (
+          {/* Gráfico de inversión anual */}
+          {kpis.porAnio.length > 0 && (
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-2">Inversión por mes (UI)</p>
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-2">Inversión por año (UI)</p>
               <ResponsiveContainer width="100%" height={180}>
-                <BarChart data={kpis.porMes} margin={{ top: 4, right: 8, left: 8, bottom: 0 }} barSize={18}>
+                <BarChart data={kpis.porAnio} margin={{ top: 4, right: 8, left: 8, bottom: 0 }} barSize={18}>
                   <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.08} />
                   <XAxis dataKey="label" tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
                   <YAxis
@@ -660,7 +715,114 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-6">
+      {/* ── View toggle ─────────────────────────────────── */}
+      <div className="flex items-center gap-0.5 border-b border-border/60">
+        {[{ key: 'list', label: 'Comprobantes' }, { key: 'plan', label: 'Plan de ejecución' }].map(v => (
+          <button
+            key={v.key}
+            onClick={() => setActiveView(v.key)}
+            className={cn(
+              "px-4 py-2 text-[12px] font-medium rounded-t-md border border-b-0 transition-all duration-150 whitespace-nowrap",
+              activeView === v.key
+                ? "border-border/60 bg-background text-foreground -mb-px"
+                : "border-transparent text-muted-foreground hover:text-foreground hover:border-border/40 hover:bg-card/60"
+            )}
+          >
+            {v.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Plan view ──────────────────────────────────── */}
+      {activeView === 'plan' && (
+        <div className="bg-card/30 border border-border/50 rounded-xl p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Plan de ejecución · <span className="normal-case font-normal">{activePeriodo === 'presentacion' ? 'Presentación' : `Control ${activePeriodo.replace('control_', '')}`}</span>
+            </h2>
+            {(planDirty || planSaving) && (
+              <Button
+                onClick={handlePlanSave}
+                disabled={planSaving}
+                size="sm"
+                className="h-[28px] text-[11px] gap-1.5"
+              >
+                {planSaving ? <><Spinner size={12} /> Guardando...</> : <><Check size={13} /> Guardar plan</>}
+              </Button>
+            )}
+          </div>
+          {loadingResults ? (
+            <LoadingState message="Cargando..." />
+          ) : (
+            <div className="flex gap-3 overflow-x-auto pb-2">
+              {planColumns.map(col => {
+                const items = (results || []).filter(r => getItemColumn(r) === col.key)
+                const isOver = dragOverCol === col.key && !col.locked
+                return (
+                  <div
+                    key={col.key}
+                    className={cn(
+                      "flex flex-col rounded-lg border transition-colors",
+                      "min-w-[210px] w-[210px]",
+                      isOver ? "border-primary/60 bg-primary/5" : "border-border/50 bg-muted/10"
+                    )}
+                    onDragOver={(e) => { e.preventDefault(); if (!col.locked) setDragOverCol(col.key) }}
+                    onDragLeave={() => setDragOverCol(null)}
+                    onDrop={(e) => handlePlanDrop(e, col.key)}
+                  >
+                    <div className="px-3 py-2.5 border-b border-border/40">
+                      <p className="text-[12px] font-semibold text-foreground">{col.label}</p>
+                      {col.sub && <p className="text-[10px] text-muted-foreground/70 mt-0.5">{col.sub}</p>}
+                      <p className="text-[10px] text-muted-foreground/50 mt-1">{items.length} item{items.length !== 1 ? 's' : ''}</p>
+                    </div>
+                    <div className="flex flex-col gap-2 p-2 flex-1 min-h-[140px]">
+                      {items.map(item => {
+                        const isFactura = item.tipo_comprobante === 'Factura'
+                        return (
+                          <div
+                            key={item.id}
+                            draggable={!isFactura}
+                            onDragStart={(e) => e.dataTransfer.setData('text/plain', item.id)}
+                            className={cn(
+                              "rounded-md border p-2.5 text-[11px] space-y-1 select-none",
+                              isFactura
+                                ? "border-border/30 bg-card/50 opacity-60 cursor-default"
+                                : "border-border/50 bg-card cursor-grab active:cursor-grabbing hover:border-primary/50 hover:shadow-sm transition-all"
+                            )}
+                          >
+                            <div className="flex items-center justify-between gap-1">
+                              <Badge className={cn(
+                                "text-[9px] h-4 px-1.5 border-transparent font-medium",
+                                isFactura ? "bg-primary/15 text-primary" : "bg-warning/15 text-warning"
+                              )}>
+                                {item.tipo_comprobante || 'Sin tipo'}
+                              </Badge>
+                              {isFactura && <span className="text-[10px] text-muted-foreground/50" title="Bloqueada">⬤</span>}
+                            </div>
+                            <p className="font-medium text-foreground truncate" title={item.proveedor}>{item.proveedor || '(sin proveedor)'}</p>
+                            {item.monto != null && (
+                              <p className="text-muted-foreground">{item.moneda} {item.monto.toLocaleString()}</p>
+                            )}
+                            {item.categoria && <p className="text-muted-foreground/60 truncate">{item.categoria}</p>}
+                          </div>
+                        )
+                      })}
+                      {!col.locked && items.length === 0 && (
+                        <div className="flex-1 flex items-center justify-center rounded-md border border-dashed border-border/30 min-h-[80px]">
+                          <p className="text-[11px] text-muted-foreground/40 text-center px-2">Arrastrá presupuestos acá</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── List view ─────────────────────────────────────── */}
+      {activeView === 'list' && <div className="grid grid-cols-1 gap-6">
         {/* Upload area */}
         <div className="bg-card/30 border border-border/50 rounded-xl p-5 shadow-sm">
           <div className="flex items-center justify-between mb-4">
@@ -875,19 +1037,20 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                           { label: 'Moneda', field: 'moneda' },
                           { label: 'Categoría', field: 'categoria' },
                           { label: 'Tipo', field: 'tipo_comprobante' },
+                          { label: 'Año Ejec.', field: 'fecha_ejecucion' },
                           { label: 'Estado', field: null },
                         ].map(({ label, field }) => (
                           <th
                             key={label}
-                            onClick={field && !isEditing ? () => handleSort(field) : undefined}
+                            onClick={field ? () => handleSort(field) : undefined}
                             className={cn(
                               "py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground select-none",
                               isEditing ? "px-2 border-r border-border/30 last:border-r-0" : "px-3",
-                              field && !isEditing && "cursor-pointer hover:text-foreground transition-colors"
+                              field && "cursor-pointer hover:text-foreground transition-colors"
                             )}
                           >
                             {label}
-                            {field && !isEditing && sortField === field && (
+                            {field && sortField === field && (
                               <span className="ml-1 opacity-70">{sortDir === 'asc' ? '↑' : '↓'}</span>
                             )}
                           </th>
@@ -895,27 +1058,27 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                       </tr>
                     </thead>
                     <tbody className={cn(isEditing ? "" : "divide-y divide-border/50")}>
-                      {(isEditing ? editedResults : sortedResults(results)).map((r, i) => {
+                      {sortedResults(isEditing ? editedResults : results).map((r, i) => {
                         const completado = r.proveedor && r.fecha && r.monto
                         const cellEdit = "p-0 border-r border-b border-border/25 last:border-r-0"
                         const inputEdit = "w-full min-h-[34px] bg-transparent text-foreground px-2 py-1 text-[12px] outline-none focus:bg-primary/5 placeholder:text-muted-foreground/40"
                         const selectEdit = "w-full min-h-[34px] bg-background text-foreground px-2 py-1 text-[12px] outline-none focus:bg-primary/5 cursor-pointer"
 
                         return (
-                          <tr key={i} className={cn(isEditing ? "last:border-b-0" : "bg-card hover:bg-accent/30 transition-colors")}>
+                          <tr key={r.id ?? i} className={cn(isEditing ? "last:border-b-0" : "bg-card hover:bg-accent/30 transition-colors")}>
                             {isEditing && (
                               <td className="w-8 px-3 border-r border-b border-border/25">
                                 <input
                                   type="checkbox"
-                                  checked={selectedRows.includes(i)}
-                                  onChange={() => handleToggleRow(i)}
+                                  checked={selectedRows.includes(r.id)}
+                                  onChange={() => handleToggleRow(r.id)}
                                 />
                               </td>
                             )}
                             {/* Descripción */}
                             <td className={isEditing ? cellEdit : "px-3 py-2.5 max-w-[220px]"}>
                               {isEditing ? (
-                                <input value={r.descripcion || ''} onChange={(e) => handleFieldChange(i, 'descripcion', e.target.value)} className={inputEdit} />
+                                <input value={r.descripcion || ''} onChange={(e) => handleFieldChange(r.id, 'descripcion', e.target.value)} className={inputEdit} />
                               ) : (
                                 <div className="truncate" title={r.descripcion || ''}>{r.descripcion || '--'}</div>
                               )}
@@ -923,7 +1086,7 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                             {/* N° Factura */}
                             <td className={isEditing ? cellEdit : "px-3 py-2.5 whitespace-nowrap"}>
                               {isEditing ? (
-                                <input value={r.numero_factura || ''} onChange={(e) => handleFieldChange(i, 'numero_factura', e.target.value)} className={inputEdit} />
+                                <input value={r.numero_factura || ''} onChange={(e) => handleFieldChange(r.id, 'numero_factura', e.target.value)} className={inputEdit} />
                               ) : (
                                 r.numero_factura || '--'
                               )}
@@ -931,7 +1094,7 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                             {/* Proveedor */}
                             <td className={isEditing ? cellEdit : "px-3 py-2.5"}>
                               {isEditing ? (
-                                <input value={r.proveedor || ''} onChange={(e) => handleFieldChange(i, 'proveedor', e.target.value)} className={inputEdit} />
+                                <input value={r.proveedor || ''} onChange={(e) => handleFieldChange(r.id, 'proveedor', e.target.value)} className={inputEdit} />
                               ) : (
                                 r.proveedor || '--'
                               )}
@@ -940,10 +1103,10 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                             <td className={isEditing ? cellEdit : "px-3 py-2.5 whitespace-nowrap"}>
                               {isEditing ? (
                                 <CellDatePicker
-                                  id={`fecha-${i}`}
+                                  id={`fecha-${r.id}`}
                                   value={r.fecha || ''}
-                                  onChange={(v) => handleFieldChange(i, 'fecha', v)}
-                                  open={openDropdown === `fecha-${i}`}
+                                  onChange={(v) => handleFieldChange(r.id, 'fecha', v)}
+                                  open={openDropdown === `fecha-${r.id}`}
                                   onOpen={setOpenDropdown}
                                 />
                               ) : (
@@ -953,7 +1116,7 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                             {/* Monto */}
                             <td className={isEditing ? cellEdit : "px-3 py-2.5 text-right"}>
                               {isEditing ? (
-                                <input type="number" step="0.01" value={r.monto ?? ''} onChange={(e) => handleFieldChange(i, 'monto', e.target.value)} className={cn(inputEdit, "text-right w-24")} />
+                                <input type="number" step="0.01" value={r.monto ?? ''} onChange={(e) => handleFieldChange(r.id, 'monto', e.target.value)} className={cn(inputEdit, "text-right w-24")} />
                               ) : (
                                 r.monto != null ? r.monto.toLocaleString() : '--'
                               )}
@@ -962,11 +1125,11 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                             <td className={isEditing ? cellEdit : "px-3 py-2.5"}>
                               {isEditing ? (
                                 <CellDropdown
-                                  id={`${i}-moneda`}
+                                  id={`${r.id}-moneda`}
                                   value={(r.moneda || '').trim()}
                                   options={[{ v: '', l: '--' }, { v: 'UYU', l: 'UYU' }, { v: 'USD', l: 'USD' }]}
-                                  onChange={(v) => handleFieldChange(i, 'moneda', v)}
-                                  open={openDropdown === `${i}-moneda`}
+                                  onChange={(v) => handleFieldChange(r.id, 'moneda', v)}
+                                  open={openDropdown === `${r.id}-moneda`}
                                   onOpen={setOpenDropdown}
                                 />
                               ) : (
@@ -977,7 +1140,7 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                             <td className={isEditing ? cellEdit : "px-3 py-2.5"}>
                               {isEditing ? (
                                 <CellDropdown
-                                  id={`${i}-categoria`}
+                                  id={`${r.id}-categoria`}
                                   value={r.categoria || ''}
                                   options={[
                                     { v: '', l: '--' },
@@ -993,8 +1156,8 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                                     { v: 'Honorarios', l: 'Honorarios' },
                                     { v: 'OC/Imprevistos', l: 'OC/Imprevistos' },
                                   ]}
-                                  onChange={(v) => handleFieldChange(i, 'categoria', v)}
-                                  open={openDropdown === `${i}-categoria`}
+                                  onChange={(v) => handleFieldChange(r.id, 'categoria', v)}
+                                  open={openDropdown === `${r.id}-categoria`}
                                   onOpen={setOpenDropdown}
                                 />
                               ) : (
@@ -1005,15 +1168,30 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                             <td className={isEditing ? cellEdit : "px-3 py-2.5 whitespace-nowrap"}>
                               {isEditing ? (
                                 <CellDropdown
-                                  id={`${i}-tipo`}
+                                  id={`${r.id}-tipo`}
                                   value={r.tipo_comprobante || ''}
                                   options={[{ v: '', l: '--' }, { v: 'Factura', l: 'Factura' }, { v: 'Presupuesto', l: 'Presupuesto' }]}
-                                  onChange={(v) => handleFieldChange(i, 'tipo_comprobante', v)}
-                                  open={openDropdown === `${i}-tipo`}
+                                  onChange={(v) => handleFieldChange(r.id, 'tipo_comprobante', v)}
+                                  open={openDropdown === `${r.id}-tipo`}
                                   onOpen={setOpenDropdown}
                                 />
                               ) : (
                                 r.tipo_comprobante || '--'
+                              )}
+                            </td>
+                            {/* Año ejecución */}
+                            <td className={isEditing ? cellEdit : "px-3 py-2.5 whitespace-nowrap"}>
+                              {isEditing ? (
+                                <CellDropdown
+                                  id={`${r.id}-anio-ejec`}
+                                  value={r.fecha_ejecucion ? r.fecha_ejecucion.substring(0, 4) : ''}
+                                  options={yearOptions}
+                                  onChange={(v) => handleFieldChange(r.id, 'fecha_ejecucion', v ? `${v}-01-01` : null)}
+                                  open={openDropdown === `${r.id}-anio-ejec`}
+                                  onOpen={setOpenDropdown}
+                                />
+                              ) : (
+                                r.fecha_ejecucion ? r.fecha_ejecucion.substring(0, 4) : '--'
                               )}
                             </td>
                             {/* Estado */}
@@ -1040,7 +1218,7 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
             </div>
           )}
         </div>
-      </div>
+      </div>}
     </div>
   )
 }
