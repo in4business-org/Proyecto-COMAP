@@ -43,23 +43,29 @@ export default function Login() {
           </div>
 
           {error && (
-            <div className="mb-6 p-4 bg-red-500/10 border border-red-500/50 rounded-xl flex items-start gap-3 backdrop-blur-sm">
-              <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+            <div
+              id="login-error"
+              role="alert"
+              className="mb-6 p-4 bg-red-500/10 border border-red-500/50 rounded-xl flex items-start gap-3 backdrop-blur-sm"
+            >
+              <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" aria-hidden="true" />
               <p className="text-sm text-red-200">{error}</p>
             </div>
           )}
 
           <form onSubmit={handleLogin} className="space-y-6">
             <div>
-              <label className="block text-sm font-medium text-indigo-100 mb-2">Correo Electrónico</label>
+              <label htmlFor="login-email" className="block text-sm font-medium text-indigo-100 mb-2">Correo Electrónico</label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <Mail className="h-5 w-5 text-indigo-300" />
+                  <Mail className="h-5 w-5 text-indigo-300" aria-hidden="true" />
                 </div>
                 <input
+                  id="login-email"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  aria-describedby={error ? 'login-error' : undefined}
                   className="block w-full pl-12 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-indigo-300/50 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-all"
                   placeholder="admin@empresa.com"
                   required
@@ -68,15 +74,17 @@ export default function Login() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-indigo-100 mb-2">Contraseña</label>
+              <label htmlFor="login-password" className="block text-sm font-medium text-indigo-100 mb-2">Contraseña</label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <Lock className="h-5 w-5 text-indigo-300" />
+                  <Lock className="h-5 w-5 text-indigo-300" aria-hidden="true" />
                 </div>
                 <input
+                  id="login-password"
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  aria-describedby={error ? 'login-error' : undefined}
                   className="block w-full pl-12 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-indigo-300/50 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-all"
                   placeholder="••••••••"
                   required

@@ -7,9 +7,13 @@ export function Spinner({ className, size = 20, ...props }) {
 
 export function LoadingState({ message = 'Cargando...' }) {
   return (
-    <div className="flex flex-col items-center justify-center py-16 gap-4">
-      <Spinner size={28} />
-      <p className="text-sm text-muted-foreground">{message}</p>
+    <div
+      className="flex flex-col items-center justify-center py-16 gap-4"
+      role="status"
+      aria-label={message}
+    >
+      <Spinner size={28} aria-hidden="true" />
+      <p className="text-sm text-muted-foreground" aria-hidden="true">{message}</p>
     </div>
   )
 }

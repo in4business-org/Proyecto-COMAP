@@ -30,31 +30,67 @@ function getMimeType(filename) {
   return mimeMap[ext] || 'application/pdf';
 }
 
-/** Save results to database */
-async function guardarResultadosDB(proyectoId, periodo, resultados) {
-  const dataToInsert = (resultados || []).map(r => ({
-    proyectoId,
-    periodo,
-    archivo: r.archivo || null,
-    descripcion: r.descripcion || null,
-    numero_factura: r.numero_factura || null,
-    proveedor: r.proveedor || null,
-    rut: r.rut || null,
-    fecha: r.fecha || null,
-    monto: r.monto ? parseFloat(r.monto) : null,
-    moneda: r.moneda || null,
-    cantidad: r.cantidad ? parseInt(r.cantidad) : 1,
-    categoria: r.categoria || null,
-    rut_receptor: r.rut_receptor || null,
-    razon_social_receptor: r.razon_social_receptor || null,
-    tipo_comprobante: r.tipo_comprobante || null,
-    texto_extraido: Boolean(r.texto_extraido)
-  }));
+/**
+ * Calcula fecha_ejecucion por defecto:
+ * - Factura: misma fecha del comprobante (ya ejecutada, antes de presentación)
+ * - Presupuesto / null: fecha_presentacion + 1 día (año de presentación)
+ */
+function calcularFechaEjecucion(tipoComprobante, fechaFactura, fechaPresentacion) {
+  if (tipoComprobante === 'Factura') return fechaFactura || null;
+  if (fechaPresentacion) {
+    const d = new Date(fechaPresentacion);
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().split('T')[0];
+  }
+  return null;
+}
 
-  await prisma.$transaction([
-    prisma.factura.deleteMany({ where: { proyectoId, periodo } }),
-    ...(dataToInsert.length > 0 ? [prisma.factura.createMany({ data: dataToInsert })] : []),
-  ]);
+/** Save results to database (upsert by id to preserve updatedAt per-row) */
+async function guardarResultadosDB(proyectoId, periodo, resultados) {
+  const incoming = resultados || [];
+  const incomingIds = incoming.map(r => r.id).filter(Boolean);
+
+  // Delete rows that were removed (had an id before, not present now)
+  await prisma.$transaction(async (tx) => {
+    // Remove rows not in incoming list
+    await tx.factura.deleteMany({
+      where: {
+        proyectoId,
+        periodo,
+        ...(incomingIds.length > 0 ? { id: { notIn: incomingIds } } : {}),
+      }
+    });
+
+    await Promise.all(incoming.map(r => {
+      const data = {
+        proyectoId,
+        periodo,
+        archivo: r.archivo || null,
+        descripcion: r.descripcion || null,
+        numero_factura: r.numero_factura || null,
+        proveedor: r.proveedor || null,
+        rut: r.rut || null,
+        fecha: r.fecha || null,
+        monto: r.monto ? parseFloat(r.monto) : null,
+        moneda: r.moneda || null,
+        cantidad: r.cantidad ? parseInt(r.cantidad) : 1,
+        categoria: r.categoria || null,
+        rut_receptor: r.rut_receptor || null,
+        razon_social_receptor: r.razon_social_receptor || null,
+        tipo_comprobante: r.tipo_comprobante || null,
+        fecha_ejecucion: r.fecha_ejecucion || null,
+        texto_extraido: Boolean(r.texto_extraido),
+      };
+      if (r.id) {
+        return tx.factura.upsert({
+          where: { id: r.id },
+          update: data,
+          create: { id: r.id, ...data },
+        });
+      }
+      return tx.factura.create({ data });
+    }));
+  });
 }
 
 /** Read persisted results from db */
@@ -72,13 +108,13 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/upload', upload
   try {
     const { empresaId, proyectoId, periodo } = req.params;
     const folderPath = `proyectos/${empresaId}/${proyectoId}/${periodo}`;
-    const subidos = [];
-    for (const file of (req.files || [])) {
-      if (isSupported(file.originalname)) {
-        await supabaseService.uploadFile(`${folderPath}/${file.originalname}`, file.buffer, file.mimetype);
-        subidos.push(file.originalname);
-      }
-    }
+    const supported = (req.files || []).filter(f => isSupported(f.originalname));
+    const subidos = await Promise.all(
+      supported.map(f =>
+        supabaseService.uploadFile(`${folderPath}/${f.originalname}`, f.buffer, f.mimetype)
+          .then(() => f.originalname)
+      )
+    );
     res.json({ subidos, total: subidos.length });
   } catch (error) {
     console.error(error);
@@ -92,12 +128,17 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/subir-y-procesa
     const { empresaId, proyectoId, periodo } = req.params;
     const folderPath = `proyectos/${empresaId}/${proyectoId}/${periodo}`;
 
-    const archivosData = [];
-    for (const file of (req.files || [])) {
-      if (!isSupported(file.originalname)) continue;
-      await supabaseService.uploadFile(`${folderPath}/${file.originalname}`, file.buffer, file.mimetype);
-      archivosData.push({ buffer: file.buffer, mimeType: getMimeType(file.originalname), filename: file.originalname });
-    }
+    const supported = (req.files || []).filter(f => isSupported(f.originalname));
+    await Promise.all(
+      supported.map(f =>
+        supabaseService.uploadFile(`${folderPath}/${f.originalname}`, f.buffer, f.mimetype)
+      )
+    );
+    const archivosData = supported.map(f => ({
+      buffer: f.buffer,
+      mimeType: getMimeType(f.originalname),
+      filename: f.originalname,
+    }));
 
     if (!archivosData.length) {
       return res.json(await leerResultadosDB(proyectoId, periodo));
@@ -106,6 +147,7 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/subir-y-procesa
     const nuevos = await facturaService.analizarMultipleArchivos(archivosData);
 
     if (nuevos.length > 0) {
+      const meta = await proyectoService.getMetadata(empresaId, proyectoId) || {};
       await prisma.factura.createMany({
         data: nuevos.map(r => ({
           proyectoId,
@@ -123,6 +165,7 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/subir-y-procesa
           rut_receptor: r.rut_receptor || null,
           razon_social_receptor: r.razon_social_receptor || null,
           tipo_comprobante: r.tipo_comprobante || null,
+          fecha_ejecucion: calcularFechaEjecucion(r.tipo_comprobante, r.fecha, meta.fecha_presentacion),
           texto_extraido: Boolean(r.texto_extraido),
         })),
       });
@@ -146,16 +189,18 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/reprocesar', as
     }
 
     const folderPath = `proyectos/${empresaId}/${proyectoId}/${periodo}`;
-    const archivosData = [];
-
-    for (const filename of archivos) {
-      try {
-        const buffer = await supabaseService.downloadFile(`${folderPath}/${filename}`);
-        archivosData.push({ buffer, mimeType: getMimeType(filename), filename });
-      } catch (e) {
-        console.warn(`No se pudo descargar ${filename}:`, e.message);
-      }
-    }
+    const downloadResults = await Promise.allSettled(
+      archivos.map(filename =>
+        supabaseService.downloadFile(`${folderPath}/${filename}`)
+          .then(buffer => ({ buffer, mimeType: getMimeType(filename), filename }))
+      )
+    );
+    downloadResults
+      .filter(r => r.status === 'rejected')
+      .forEach(r => console.warn('No se pudo descargar archivo:', r.reason?.message));
+    const archivosData = downloadResults
+      .filter(r => r.status === 'fulfilled')
+      .map(r => r.value);
 
     if (!archivosData.length) {
       return res.status(404).json({ error: 'No se pudieron descargar los archivos indicados' });
@@ -208,15 +253,22 @@ router.get('/empresas/:empresaId/proyectos/:proyectoId/:periodo/analizar', async
     const fileList = await supabaseService.listFiles(folderPath);
     if (!fileList || !fileList.length) return res.json(await leerResultadosDB(proyectoId, periodo));
 
-    const archivosData = [];
-    for (const f of fileList) {
-        if (!isSupported(f.name)) continue;
-        const buffer = await supabaseService.downloadFile(`${folderPath}/${f.name}`);
-        archivosData.push({ buffer, mimeType: getMimeType(f.name), filename: f.name });
-    }
-    
+    const archivosData = await Promise.all(
+      fileList
+        .filter(f => isSupported(f.name))
+        .map(f =>
+          supabaseService.downloadFile(`${folderPath}/${f.name}`)
+            .then(buffer => ({ buffer, mimeType: getMimeType(f.name), filename: f.name }))
+        )
+    );
+
     const resultados = await facturaService.analizarMultipleArchivos(archivosData);
-    await guardarResultadosDB(proyectoId, periodo, resultados);
+    const meta = await proyectoService.getMetadata(empresaId, proyectoId) || {};
+    const resultadosConFecha = resultados.map(r => ({
+      ...r,
+      fecha_ejecucion: calcularFechaEjecucion(r.tipo_comprobante, r.fecha, meta.fecha_presentacion),
+    }));
+    await guardarResultadosDB(proyectoId, periodo, resultadosConFecha);
     res.json(await leerResultadosDB(proyectoId, periodo));
   } catch (e) {
     console.error(e);
@@ -233,12 +285,14 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/excel', async (
     if (!resultados || !resultados.length) {
       const folderPath = `proyectos/${empresaId}/${proyectoId}/${periodo}`;
       const fileList = await supabaseService.listFiles(folderPath);
-      const archivosData = [];
-      for (const f of (fileList || [])) {
-          if (!isSupported(f.name)) continue;
-          const buffer = await supabaseService.downloadFile(`${folderPath}/${f.name}`);
-          archivosData.push({ buffer, mimeType: getMimeType(f.name), filename: f.name });
-      }
+      const archivosData = await Promise.all(
+        (fileList || [])
+          .filter(f => isSupported(f.name))
+          .map(f =>
+            supabaseService.downloadFile(`${folderPath}/${f.name}`)
+              .then(buffer => ({ buffer, mimeType: getMimeType(f.name), filename: f.name }))
+          )
+      );
       const parsedStats = await facturaService.analizarMultipleArchivos(archivosData);
       await guardarResultadosDB(proyectoId, periodo, parsedStats);
       resultados = await leerResultadosDB(proyectoId, periodo);
@@ -305,6 +359,7 @@ router.get('/empresas/:empresaId/proyectos/:proyectoId/:periodo/template-importa
       { header: 'cantidad', key: 'cantidad', width: 10 },
       { header: 'categoria', key: 'categoria', width: 28 },
       { header: 'tipo_comprobante (Factura o Presupuesto)', key: 'tipo_comprobante', width: 32 },
+      { header: 'fecha_ejecucion (opcional, YYYY-MM-DD)', key: 'fecha_ejecucion', width: 30 },
     ];
     ws.getColumn(5).numFmt = 'DD/MM/YYYY';
     ws.getRow(1).font = { bold: true };
@@ -323,7 +378,7 @@ router.get('/empresas/:empresaId/proyectos/:proyectoId/:periodo/template-importa
 // POST  import facturas from Excel
 router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/importar', upload.single('file'), async (req, res) => {
   try {
-    const { proyectoId, periodo } = req.params;
+    const { empresaId, proyectoId, periodo } = req.params;
     if (!req.file?.buffer) return res.status(400).json({ error: 'No se recibió archivo' });
 
     const ExcelJS = require('exceljs');
@@ -350,18 +405,64 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/importar', uplo
       const cantidad = cantidadRaw != null && cantidadRaw !== '' ? parseInt(cantidadRaw) : 1;
       const categoria = row.getCell(9).text?.trim() || null;
       const tipo_comprobante = row.getCell(10).text?.trim() || null;
+      const fechaEjecucionRaw = row.getCell(11).value;
+      const fecha_ejecucion_excel = fechaEjecucionRaw instanceof Date
+        ? formatearFecha(fechaEjecucionRaw)
+        : (typeof fechaEjecucionRaw === 'string' ? fechaEjecucionRaw.trim() || null : null);
 
       if (!descripcion && !numero_factura && !proveedor && !monto) return;
 
       nuevas.push({
         descripcion, numero_factura, proveedor, rut, fecha,
-        monto, moneda, cantidad, categoria, tipo_comprobante, texto_extraido: false,
+        monto, moneda, cantidad, categoria, tipo_comprobante,
+        fecha_ejecucion: fecha_ejecucion_excel,
+        texto_extraido: false,
       });
     });
 
+    const meta = await proyectoService.getMetadata(empresaId, proyectoId) || {};
+    const nuevasConFecha = nuevas.map(r => ({
+      ...r,
+      fecha_ejecucion: r.fecha_ejecucion || calcularFechaEjecucion(r.tipo_comprobante, r.fecha, meta.fecha_presentacion),
+    }));
+
     const existentes = await leerResultadosDB(proyectoId, periodo);
-    await guardarResultadosDB(proyectoId, periodo, [...existentes, ...nuevas]);
+    await guardarResultadosDB(proyectoId, periodo, [...existentes, ...nuevasConFecha]);
     const updated = await leerResultadosDB(proyectoId, periodo);
+    res.json(updated);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// PATCH  update execution year of a single factura
+router.patch('/empresas/:empresaId/proyectos/:proyectoId/facturas/:facturaId/fecha-ejecucion', async (req, res) => {
+  try {
+    const { proyectoId, facturaId } = req.params;
+    const { anio } = req.body;
+
+    const anioInt = parseInt(anio);
+    if (!anio || isNaN(anioInt) || anioInt < 2000 || anioInt > 2100) {
+      return res.status(400).json({ error: 'anio debe ser un año válido' });
+    }
+
+    const factura = await prisma.factura.findFirst({ where: { id: facturaId, proyectoId } });
+    if (!factura) return res.status(404).json({ error: 'Factura no encontrada' });
+
+    // Conserva mes y día existentes, solo cambia el año
+    let nuevaFechaEjecucion;
+    if (factura.fecha_ejecucion) {
+      const partes = factura.fecha_ejecucion.split('-');
+      nuevaFechaEjecucion = `${anioInt}-${partes[1] || '01'}-${partes[2] || '01'}`;
+    } else {
+      nuevaFechaEjecucion = `${anioInt}-01-01`;
+    }
+
+    const updated = await prisma.factura.update({
+      where: { id: facturaId },
+      data: { fecha_ejecucion: nuevaFechaEjecucion },
+    });
     res.json(updated);
   } catch (e) {
     console.error(e);
@@ -375,13 +476,13 @@ const SIMPLE_RESULTS_KEY = 'simple_uploads/_resultados.json';
 
 router.post('/simple/upload', upload.array('files'), async (req, res) => {
   try {
-    const subidos = [];
-    for (const file of (req.files || [])) {
-      if (isSupported(file.originalname)) {
-        await supabaseService.uploadFile(`simple_uploads/${file.originalname}`, file.buffer, file.mimetype);
-        subidos.push(file.originalname);
-      }
-    }
+    const supported = (req.files || []).filter(f => isSupported(f.originalname));
+    const subidos = await Promise.all(
+      supported.map(f =>
+        supabaseService.uploadFile(`simple_uploads/${f.originalname}`, f.buffer, f.mimetype)
+          .then(() => f.originalname)
+      )
+    );
     res.json({ subidos, total: subidos.length });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -400,13 +501,15 @@ router.get('/simple/resultados', async (_req, res) => {
 router.get('/simple/analizar', async (_req, res) => {
   try {
     const fileList = await supabaseService.listFiles('simple_uploads');
-    const archivosData = [];
-    for (const f of (fileList || [])) {
-      if (f.name === '_resultados.json' || !isSupported(f.name)) continue;
-      const buffer = await supabaseService.downloadFile(`simple_uploads/${f.name}`);
-      archivosData.push({ buffer, mimeType: getMimeType(f.name), filename: f.name });
-    }
-    
+    const archivosData = await Promise.all(
+      (fileList || [])
+        .filter(f => f.name !== '_resultados.json' && isSupported(f.name))
+        .map(f =>
+          supabaseService.downloadFile(`simple_uploads/${f.name}`)
+            .then(buffer => ({ buffer, mimeType: getMimeType(f.name), filename: f.name }))
+        )
+    );
+
     const resultados = await facturaService.analizarMultipleArchivos(archivosData);
     await supabaseService.uploadFile(SIMPLE_RESULTS_KEY, Buffer.from(JSON.stringify(resultados, null, 2)), 'application/json');
     res.json(resultados);
@@ -426,12 +529,14 @@ router.get('/simple/excel', async (_req, res) => {
     if (!resultados.length) {
        // fallback inline analyze
        const fileList = await supabaseService.listFiles('simple_uploads');
-       const archivosData = [];
-       for (const f of (fileList || [])) {
-          if (f.name === '_resultados.json' || !isSupported(f.name)) continue;
-          const buffer = await supabaseService.downloadFile(`simple_uploads/${f.name}`);
-          archivosData.push({ buffer, mimeType: getMimeType(f.name), filename: f.name });
-       }
+       const archivosData = await Promise.all(
+         (fileList || [])
+           .filter(f => f.name !== '_resultados.json' && isSupported(f.name))
+           .map(f =>
+             supabaseService.downloadFile(`simple_uploads/${f.name}`)
+               .then(buffer => ({ buffer, mimeType: getMimeType(f.name), filename: f.name }))
+           )
+       );
        resultados = await facturaService.analizarMultipleArchivos(archivosData);
     }
     if (!resultados.length) return res.status(404).json({ error: 'No hay facturas procesadas' });
@@ -465,22 +570,28 @@ router.post('/simple/asociar', async (req, res) => {
     }
 
     const folderPath = `proyectos/${empresaId}/${proyectoId}/${periodo}`;
-    let copiados = 0;
-    
-    for (const r of resultadosSimples) {
-      if (r.archivo) {
-         try {
-           const srcBuf = await supabaseService.downloadFile(`simple_uploads/${r.archivo}`);
-           await supabaseService.uploadFile(`${folderPath}/${r.archivo}`, srcBuf, getMimeType(r.archivo));
-           copiados++;
-         } catch { } // ignore missing files
-      }
-    }
+    const copyResults = await Promise.allSettled(
+      resultadosSimples
+        .filter(r => r.archivo)
+        .map(r =>
+          supabaseService.downloadFile(`simple_uploads/${r.archivo}`)
+            .then(srcBuf =>
+              supabaseService.uploadFile(`${folderPath}/${r.archivo}`, srcBuf, getMimeType(r.archivo))
+            )
+        )
+    );
+    const copiados = copyResults.filter(r => r.status === 'fulfilled').length;
+
+    const meta = await proyectoService.getMetadata(empresaId, proyectoId) || {};
+    const simplesConFecha = resultadosSimples.map(r => ({
+      ...r,
+      fecha_ejecucion: r.fecha_ejecucion || calcularFechaEjecucion(r.tipo_comprobante, r.fecha, meta.fecha_presentacion),
+    }));
 
     let resultadosDestino = await leerResultadosDB(proyectoId, periodo) || [];
     const destinoMap = new Map(resultadosDestino.map(r => [r.archivo, r]));
 
-    for (const r of resultadosSimples) {
+    for (const r of simplesConFecha) {
       destinoMap.set(r.archivo, r);
     }
 

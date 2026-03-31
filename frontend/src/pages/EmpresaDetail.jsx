@@ -54,11 +54,14 @@ export default function EmpresaDetail() {
   const handleCreateProj = async () => {
     setCreating(true)
     try {
-      await projApi.create(empresaId, projForm.anio, projForm.duracion, projForm.fecha || null)
+      const newProj = await projApi.create(empresaId, projForm.anio, projForm.duracion, projForm.fecha || null)
       setDialogOpen(false)
-      setProyectos(await projApi.list(empresaId))
+      setProyectos(prev => [...prev, newProj])
       setProjForm({ anio: new Date().getFullYear(), duracion: 5, fecha: '' })
-    } catch (err) { console.error(err) }
+    } catch (err) {
+      console.error(err)
+      projApi.list(empresaId).then(setProyectos).catch(console.error)
+    }
     finally { setCreating(false) }
   }
 
@@ -103,7 +106,7 @@ export default function EmpresaDetail() {
           </Link>
           <div>
             <h1 className="text-xl font-medium truncate">{empresa?.nombre}</h1>
-            <p className="text-xs text-muted-foreground font-mono">{empresa?.rut}</p>
+            <p className="text-xs text-muted-foreground">{empresa?.rut}</p>
           </div>
         </div>
         <Button onClick={() => setDialogOpen(true)} size="sm" className="gap-1.5 text-xs">
@@ -166,10 +169,10 @@ export default function EmpresaDetail() {
                     const hasDocs = !!p.expediente
                     return (
                       <tr key={p.id} className="bg-card hover:bg-accent/40 transition-colors group">
-                        <td className="px-4 py-3 text-[13px] font-mono text-muted-foreground/80 whitespace-nowrap">
+                        <td className="px-4 py-3 text-[13px] text-muted-foreground/80 whitespace-nowrap">
                           {p.fecha_creacion ? new Date(p.fecha_creacion).toLocaleDateString() : '--'}
                         </td>
-                        <td className="px-4 py-3 text-[13px] font-mono text-muted-foreground/80 whitespace-nowrap">
+                        <td className="px-4 py-3 text-[13px] text-muted-foreground/80 whitespace-nowrap">
                           {p.fecha_presentacion || '--'}
                         </td>
                         <td className="px-4 py-3 text-[13px] whitespace-nowrap">
@@ -183,10 +186,10 @@ export default function EmpresaDetail() {
                             </Badge>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-[13px] font-mono text-muted-foreground whitespace-nowrap">
+                        <td className="px-4 py-3 text-[13px] text-muted-foreground whitespace-nowrap">
                           {p.anio_presentacion}
                         </td>
-                        <td className="px-4 py-3 text-[13px] font-mono text-muted-foreground whitespace-nowrap">
+                        <td className="px-4 py-3 text-[13px] text-muted-foreground whitespace-nowrap">
                           {p.duracion_seguimiento} años
                         </td>
                         <td className="px-4 py-3 text-right">
@@ -233,10 +236,11 @@ export default function EmpresaDetail() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 gap-y-5">
             {FIELDS.map(({ key, label, span, readonly, type }) => (
               <div key={key} className={span === 2 ? 'col-span-1 md:col-span-2' : ''}>
-                <label className="text-[11px] font-medium text-muted-foreground/80 mb-1.5 block">
+                <label htmlFor={`field-${key}`} className="text-[11px] font-medium text-muted-foreground/80 mb-1.5 block">
                   {label}
                 </label>
                 <Input
+                  id={`field-${key}`}
                   type={type || 'text'}
                   readOnly={readonly}
                   value={form[key] || ''}
@@ -258,8 +262,9 @@ export default function EmpresaDetail() {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <label className="text-[12px] font-medium text-foreground">Fecha de presentación</label>
+              <label htmlFor="config-fecha" className="text-[12px] font-medium text-foreground">Fecha de presentación</label>
               <Input
+                id="config-fecha"
                 type="date"
                 value={configForm.fecha_presentacion || ''}
                 onChange={(e) => {
@@ -272,8 +277,9 @@ export default function EmpresaDetail() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <label className="text-[12px] font-medium text-foreground">Año de presentación</label>
+                <label htmlFor="config-anio" className="text-[12px] font-medium text-foreground">Año de presentación</label>
                 <Input
+                  id="config-anio"
                   type="number"
                   value={configForm.anio_presentacion || ''}
                   onChange={(e) => setConfigForm(f => ({ ...f, anio_presentacion: e.target.value }))}
@@ -281,8 +287,9 @@ export default function EmpresaDetail() {
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-[12px] font-medium text-foreground">Años de seguimiento</label>
+                <label htmlFor="config-duracion" className="text-[12px] font-medium text-foreground">Años de seguimiento</label>
                 <Input
+                  id="config-duracion"
                   type="number"
                   min="0"
                   max="10"
@@ -310,17 +317,17 @@ export default function EmpresaDetail() {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <label className="text-[12px] font-medium text-foreground">Fecha de presentación</label>
-              <Input type="date" value={projForm.fecha} onChange={(e) => setProjForm({ ...projForm, fecha: e.target.value })} className="h-9 text-[13px]" />
+              <label htmlFor="proj-fecha" className="text-[12px] font-medium text-foreground">Fecha de presentación</label>
+              <Input id="proj-fecha" type="date" value={projForm.fecha} onChange={(e) => setProjForm({ ...projForm, fecha: e.target.value })} className="h-9 text-[13px]" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <label className="text-[12px] font-medium text-foreground">Año de presentación</label>
-                <Input type="number" value={projForm.anio} onChange={(e) => setProjForm({ ...projForm, anio: parseInt(e.target.value) })} className="h-9 text-[13px]" />
+                <label htmlFor="proj-anio" className="text-[12px] font-medium text-foreground">Año de presentación</label>
+                <Input id="proj-anio" type="number" value={projForm.anio} onChange={(e) => setProjForm({ ...projForm, anio: parseInt(e.target.value) })} className="h-9 text-[13px]" />
               </div>
               <div className="space-y-1.5">
-                <label className="text-[12px] font-medium text-foreground">Años seguimiento</label>
-                <Input type="number" min="1" max="10" value={projForm.duracion} onChange={(e) => setProjForm({ ...projForm, duracion: parseInt(e.target.value) })} className="h-9 text-[13px]" />
+                <label htmlFor="proj-duracion" className="text-[12px] font-medium text-foreground">Años seguimiento</label>
+                <Input id="proj-duracion" type="number" min="1" max="10" value={projForm.duracion} onChange={(e) => setProjForm({ ...projForm, duracion: parseInt(e.target.value) })} className="h-9 text-[13px]" />
               </div>
             </div>
           </div>

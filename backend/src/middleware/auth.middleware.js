@@ -1,8 +1,32 @@
 const { createClient } = require('@supabase/supabase-js');
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
+// Cache token → user para evitar una llamada de red a Supabase en cada request.
+// TTL de 55 segundos (tokens de Supabase duran 1 hora).
+// Máximo 500 entradas para no crecer ilimitado.
+const TOKEN_CACHE = new Map();
+const TOKEN_TTL = 55 * 1000;
+const TOKEN_CACHE_MAX = 500;
+
+function getCachedUser(token) {
+  const entry = TOKEN_CACHE.get(token);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    TOKEN_CACHE.delete(token);
+    return null;
+  }
+  return entry.user;
+}
+
+function setCachedUser(token, user) {
+  if (TOKEN_CACHE.size >= TOKEN_CACHE_MAX) {
+    // Evict the oldest entry
+    TOKEN_CACHE.delete(TOKEN_CACHE.keys().next().value);
+  }
+  TOKEN_CACHE.set(token, { user, expiresAt: Date.now() + TOKEN_TTL });
+}
+
 const requireAuth = async (req, res, next) => {
-  // Omitimos la autenticación en el método OPTIONS por los preflights de CORS
   if (req.method === 'OPTIONS') {
     return next();
   }
@@ -14,15 +38,22 @@ const requireAuth = async (req, res, next) => {
     }
 
     const token = authHeader.split(' ')[1];
-    
-    // Validar el JWT token mediante Supabase
+
+    // Check cache first — avoid a network call if we already validated this token recently
+    const cached = getCachedUser(token);
+    if (cached) {
+      req.user = cached;
+      return next();
+    }
+
+    // Cache miss: validate with Supabase (network call)
     const { data: { user }, error } = await supabase.auth.getUser(token);
 
     if (error || !user) {
       return res.status(401).json({ error: 'Acceso denegado: Token inválido o expirado' });
     }
 
-    // Adjuntar la información del usuario en caso de que las rutas lo necesiten
+    setCachedUser(token, user);
     req.user = user;
     next();
   } catch (error) {

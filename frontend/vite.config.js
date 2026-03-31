@@ -16,4 +16,14 @@ export default defineConfig({
       '/api': 'http://127.0.0.1:3001',
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'recharts': ['recharts'],
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+        },
+      },
+    },
+  },
 })
