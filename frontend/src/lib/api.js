@@ -2,9 +2,28 @@ import { supabase } from './supabase';
 
 const BASE = import.meta.env.VITE_API_URL || '/api';
 
-async function request(url, options = {}) {
+// ── Cached auth token ─────────────────────────────────────
+let _cachedToken = null;
+let _tokenExpiresAt = 0;
+
+async function getToken() {
+  const now = Date.now();
+  // Reuse token if it expires in more than 60 seconds
+  if (_cachedToken && _tokenExpiresAt - now > 60_000) return _cachedToken;
   const { data: { session } } = await supabase.auth.getSession();
-  const token = session?.access_token;
+  _cachedToken = session?.access_token || null;
+  _tokenExpiresAt = session?.expires_at ? session.expires_at * 1000 : 0;
+  return _cachedToken;
+}
+
+// Invalidate cache on auth state changes (login/logout/refresh)
+supabase.auth.onAuthStateChange((_event, session) => {
+  _cachedToken = session?.access_token || null;
+  _tokenExpiresAt = session?.expires_at ? session.expires_at * 1000 : 0;
+});
+
+async function request(url, options = {}) {
+  const token = await getToken();
 
   const headers = {
     ...(options.body && !(options.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
@@ -28,6 +47,11 @@ async function request(url, options = {}) {
   if (contentType.includes('spreadsheetml') || contentType.includes('octet-stream')) return res.blob();
   return res.json();
 }
+
+// -- Dashboard (empresas + proyectos in one call)
+export const dashboard = {
+  load: () => request('/dashboard'),
+};
 
 // -- Empresas
 export const empresas = {
@@ -61,6 +85,8 @@ export const proyectos = {
 
 // -- Facturas
 export const facturas = {
+  getAllResults: (empresaId, proyectoId) =>
+    request(`/empresas/${empresaId}/proyectos/${proyectoId}/all-resultados`),
   upload: (empresaId, proyectoId, periodo, files) => {
     const fd = new FormData();
     files.forEach(f => fd.append('files', f));

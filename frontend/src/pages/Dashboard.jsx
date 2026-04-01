@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { empresas as empApi, proyectos as projApi } from '@/lib/api'
+import { dashboard as dashApi } from '@/lib/api'
 
 // Module-level cache: volver al Dashboard reutiliza los datos sin re-fetch
 let _dashCache = null;
@@ -48,19 +48,14 @@ export default function Dashboard() {
       setLoading(false)
       return
     }
-    empApi.list()
-      .then(async (emps) => {
-        setEmpresas(emps)
-        const results = await Promise.allSettled(
-          emps.map(e => projApi.list(e.id).then(projs => ({ empId: e.id, projs })))
-        )
+    dashApi.load()
+      .then((emps) => {
         const map = {}
-        results.forEach(r => {
-          if (r.status === 'fulfilled') map[r.value.empId] = r.value.projs
-        })
+        emps.forEach(e => { map[e.id] = e.proyectos || [] })
+        setEmpresas(emps)
+        setProyectosMap(map)
         _dashCache = { empresas: emps, proyectosMap: map }
         _dashCacheTime = Date.now()
-        setProyectosMap(map)
       })
       .catch(console.error)
       .finally(() => setLoading(false))

@@ -255,44 +255,33 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
       .finally(() => setLoadingCotizacion(false))
   }, [meta?.fecha_presentacion])
 
-  // Load persisted results for current periodo
+  // Bulk-load all periodos' results in ONE request
   useEffect(() => {
-    // Show cached immediately if we have it
-    if (resultsCache[activePeriodo]) {
-      setResults(resultsCache[activePeriodo])
-      setLoadingResults(false)
-    } else {
-      setLoadingResults(true)
-    }
-    
-    // Always fetch latest in background
-    factApi.getResults(empresaId, proyectoId, activePeriodo)
-      .then((data) => { 
-        const items = data && data.length ? data : []
-        setResults(items)
-        setResultsCache(prev => ({ ...prev, [activePeriodo]: items }))
-        setPeriodoCounts(prev => ({ ...prev, [activePeriodo]: items.length }))
+    setLoadingResults(true)
+    factApi.getAllResults(empresaId, proyectoId)
+      .then((grouped) => {
+        // grouped = { presentacion: [...], control_2027: [...], ... }
+        const cache = {}
+        const counts = {}
+        for (const p of periodos) {
+          const items = grouped[p] || []
+          cache[p] = items
+          counts[p] = items.length
+        }
+        setResultsCache(cache)
+        setPeriodoCounts(counts)
+        setResults(cache[activePeriodo] || [])
       })
       .catch((err) => { console.error(err); setResults([]) })
       .finally(() => setLoadingResults(false))
-  }, [empresaId, proyectoId, activePeriodo])
+  }, [empresaId, proyectoId])
 
-  // Fetch counts for all periodos for the grid (in parallel)
+  // When switching periodo, use the cache
   useEffect(() => {
-    Promise.allSettled(
-      periodos.map(p =>
-        factApi.getResults(empresaId, proyectoId, p)
-          .then(data => ({ p, count: data && data.length ? data.length : 0 }))
-          .catch(() => ({ p, count: 0 }))
-      )
-    ).then(results => {
-      const counts = {}
-      results.forEach(r => {
-        if (r.status === 'fulfilled') counts[r.value.p] = r.value.count
-      })
-      setPeriodoCounts(counts)
-    })
-  }, [empresaId, proyectoId, periodos])
+    if (resultsCache[activePeriodo] !== undefined) {
+      setResults(resultsCache[activePeriodo])
+    }
+  }, [activePeriodo, resultsCache])
 
   const handleEditToggle = () => {
     if (isEditing) {

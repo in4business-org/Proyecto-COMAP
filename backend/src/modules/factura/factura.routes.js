@@ -144,10 +144,12 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/subir-y-procesa
       return res.json(await leerResultadosDB(proyectoId, periodo));
     }
 
-    const nuevos = await facturaService.analizarMultipleArchivos(archivosData);
+    const [nuevos, meta = {}] = await Promise.all([
+      facturaService.analizarMultipleArchivos(archivosData),
+      proyectoService.getMetadata(empresaId, proyectoId),
+    ]);
 
     if (nuevos.length > 0) {
-      const meta = await proyectoService.getMetadata(empresaId, proyectoId) || {};
       await prisma.factura.createMany({
         data: nuevos.map(r => ({
           proyectoId,
@@ -214,13 +216,33 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/reprocesar', as
   }
 });
 
-// GET  retrieve persisted results
+// GET  retrieve persisted results for one periodo
 router.get('/empresas/:empresaId/proyectos/:proyectoId/:periodo/resultados', async (req, res) => {
   try {
     const { proyectoId, periodo } = req.params;
     const data = await leerResultadosDB(proyectoId, periodo);
     res.json(data || []);
   } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET  retrieve persisted results for ALL periodos in one query
+router.get('/empresas/:empresaId/proyectos/:proyectoId/all-resultados', async (req, res) => {
+  try {
+    const { proyectoId } = req.params;
+    const rows = await prisma.factura.findMany({
+      where: { proyectoId },
+      orderBy: { createdAt: 'asc' },
+    });
+    // Group by periodo
+    const grouped = {};
+    for (const row of rows) {
+      if (!grouped[row.periodo]) grouped[row.periodo] = [];
+      grouped[row.periodo].push(row);
+    }
+    res.json(grouped);
+  } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
@@ -262,8 +284,10 @@ router.get('/empresas/:empresaId/proyectos/:proyectoId/:periodo/analizar', async
         )
     );
 
-    const resultados = await facturaService.analizarMultipleArchivos(archivosData);
-    const meta = await proyectoService.getMetadata(empresaId, proyectoId) || {};
+    const [resultados, meta = {}] = await Promise.all([
+      facturaService.analizarMultipleArchivos(archivosData),
+      proyectoService.getMetadata(empresaId, proyectoId),
+    ]);
     const resultadosConFecha = resultados.map(r => ({
       ...r,
       fecha_ejecucion: calcularFechaEjecucion(r.tipo_comprobante, r.fecha, meta.fecha_presentacion),
@@ -299,12 +323,11 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/excel', async (
     }
     if (!resultados.length) return res.status(404).json({ error: 'No hay facturas procesadas' });
 
-    const meta = await proyectoService.getMetadata(empresaId, proyectoId) || {};
-    let fechaBalance = null;
-    try {
-      const info = await empresaService.getById(empresaId);
-      fechaBalance = info ? info.fecha_balance : null;
-    } catch { }
+    const [meta = {}, empresaInfo] = await Promise.all([
+      proyectoService.getMetadata(empresaId, proyectoId),
+      empresaService.getById(empresaId).catch(() => null),
+    ]);
+    const fechaBalance = empresaInfo?.fecha_balance || null;
 
     const timestamp = new Date().toISOString().replace(/[-:T]/g, '').substring(0, 15);
     const nombre = `cuadro_inversiones_${empresaId}_${periodo}_${timestamp}.xlsx`;
@@ -582,13 +605,14 @@ router.post('/simple/asociar', async (req, res) => {
     );
     const copiados = copyResults.filter(r => r.status === 'fulfilled').length;
 
-    const meta = await proyectoService.getMetadata(empresaId, proyectoId) || {};
+    const [meta = {}, resultadosDestino = []] = await Promise.all([
+      proyectoService.getMetadata(empresaId, proyectoId),
+      leerResultadosDB(proyectoId, periodo),
+    ]);
     const simplesConFecha = resultadosSimples.map(r => ({
       ...r,
       fecha_ejecucion: r.fecha_ejecucion || calcularFechaEjecucion(r.tipo_comprobante, r.fecha, meta.fecha_presentacion),
     }));
-
-    let resultadosDestino = await leerResultadosDB(proyectoId, periodo) || [];
     const destinoMap = new Map(resultadosDestino.map(r => [r.archivo, r]));
 
     for (const r of simplesConFecha) {

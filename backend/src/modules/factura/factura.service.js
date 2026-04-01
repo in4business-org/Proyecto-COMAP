@@ -71,10 +71,14 @@ class FacturaService {
    * @param {Array<{buffer: Buffer, mimeType: string, filename: string}>} archivosData 
    */
   async analizarMultipleArchivos(archivosData) {
+    const BATCH_SIZE = 3;
     const resultados = [];
-    for (const data of archivosData) {
-      const items = await this.analizarBuffer(data.buffer, data.mimeType, data.filename);
-      resultados.push(...items);
+    for (let i = 0; i < archivosData.length; i += BATCH_SIZE) {
+      const batch = archivosData.slice(i, i + BATCH_SIZE);
+      const batchResults = await Promise.all(
+        batch.map(d => this.analizarBuffer(d.buffer, d.mimeType, d.filename))
+      );
+      resultados.push(...batchResults.flat());
     }
     return resultados;
   }
