@@ -30,21 +30,6 @@ function getMimeType(filename) {
   return mimeMap[ext] || 'application/pdf';
 }
 
-/**
- * Calcula fecha_ejecucion por defecto:
- * - Factura: misma fecha del comprobante (ya ejecutada, antes de presentación)
- * - Presupuesto / null: fecha_presentacion + 1 día (año de presentación)
- */
-function calcularFechaEjecucion(tipoComprobante, fechaFactura, fechaPresentacion) {
-  if (tipoComprobante === 'Factura') return fechaFactura || null;
-  if (fechaPresentacion) {
-    const d = new Date(fechaPresentacion);
-    d.setDate(d.getDate() + 1);
-    return d.toISOString().split('T')[0];
-  }
-  return null;
-}
-
 /** Save results to database (upsert by id to preserve updatedAt per-row) */
 async function guardarResultadosDB(proyectoId, periodo, resultados) {
   const incoming = resultados || [];
@@ -78,7 +63,7 @@ async function guardarResultadosDB(proyectoId, periodo, resultados) {
         rut_receptor: r.rut_receptor || null,
         razon_social_receptor: r.razon_social_receptor || null,
         tipo_comprobante: r.tipo_comprobante || null,
-        fecha_ejecucion: r.fecha_ejecucion || null,
+        fecha_ejecucion: r.fecha_ejecucion || r.fecha || null,
         texto_extraido: Boolean(r.texto_extraido),
       };
       if (r.id) {
@@ -167,7 +152,7 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/subir-y-procesa
           rut_receptor: r.rut_receptor || null,
           razon_social_receptor: r.razon_social_receptor || null,
           tipo_comprobante: r.tipo_comprobante || null,
-          fecha_ejecucion: calcularFechaEjecucion(r.tipo_comprobante, r.fecha, meta.fecha_presentacion),
+          fecha_ejecucion: r.fecha,
           texto_extraido: Boolean(r.texto_extraido),
         })),
       });
@@ -222,7 +207,7 @@ router.get('/empresas/:empresaId/proyectos/:proyectoId/:periodo/resultados', asy
     const { proyectoId, periodo } = req.params;
     const data = await leerResultadosDB(proyectoId, periodo);
     res.json(data || []);
-  } catch(e) {
+  } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
@@ -271,7 +256,7 @@ router.get('/empresas/:empresaId/proyectos/:proyectoId/:periodo/analizar', async
   try {
     const { empresaId, proyectoId, periodo } = req.params;
     const folderPath = `proyectos/${empresaId}/${proyectoId}/${periodo}`;
-    
+
     const fileList = await supabaseService.listFiles(folderPath);
     if (!fileList || !fileList.length) return res.json(await leerResultadosDB(proyectoId, periodo));
 
@@ -290,7 +275,7 @@ router.get('/empresas/:empresaId/proyectos/:proyectoId/:periodo/analizar', async
     ]);
     const resultadosConFecha = resultados.map(r => ({
       ...r,
-      fecha_ejecucion: calcularFechaEjecucion(r.tipo_comprobante, r.fecha, meta.fecha_presentacion),
+      fecha_ejecucion: r.fecha,
     }));
     await guardarResultadosDB(proyectoId, periodo, resultadosConFecha);
     res.json(await leerResultadosDB(proyectoId, periodo));
@@ -382,7 +367,7 @@ router.get('/empresas/:empresaId/proyectos/:proyectoId/:periodo/template-importa
       { header: 'cantidad', key: 'cantidad', width: 10 },
       { header: 'categoria', key: 'categoria', width: 28 },
       { header: 'tipo_comprobante (Factura o Presupuesto)', key: 'tipo_comprobante', width: 32 },
-      { header: 'fecha_ejecucion (opcional, YYYY-MM-DD)', key: 'fecha_ejecucion', width: 30 },
+      { header: 'fecha_ejecucion (YYYY-MM-DD)', key: 'fecha_ejecucion', width: 30 },
     ];
     ws.getColumn(5).numFmt = 'DD/MM/YYYY';
     ws.getRow(1).font = { bold: true };
@@ -446,7 +431,7 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/importar', uplo
     const meta = await proyectoService.getMetadata(empresaId, proyectoId) || {};
     const nuevasConFecha = nuevas.map(r => ({
       ...r,
-      fecha_ejecucion: r.fecha_ejecucion || calcularFechaEjecucion(r.tipo_comprobante, r.fecha, meta.fecha_presentacion),
+      fecha_ejecucion: r.fecha_ejecucion || r.fecha,
     }));
 
     const existentes = await leerResultadosDB(proyectoId, periodo);
@@ -548,25 +533,25 @@ router.get('/simple/excel', async (_req, res) => {
       const buffer = await supabaseService.downloadFile(SIMPLE_RESULTS_KEY);
       resultados = JSON.parse(buffer.toString('utf-8'));
     } catch { }
-    
+
     if (!resultados.length) {
-       // fallback inline analyze
-       const fileList = await supabaseService.listFiles('simple_uploads');
-       const archivosData = await Promise.all(
-         (fileList || [])
-           .filter(f => f.name !== '_resultados.json' && isSupported(f.name))
-           .map(f =>
-             supabaseService.downloadFile(`simple_uploads/${f.name}`)
-               .then(buffer => ({ buffer, mimeType: getMimeType(f.name), filename: f.name }))
-           )
-       );
-       resultados = await facturaService.analizarMultipleArchivos(archivosData);
+      // fallback inline analyze
+      const fileList = await supabaseService.listFiles('simple_uploads');
+      const archivosData = await Promise.all(
+        (fileList || [])
+          .filter(f => f.name !== '_resultados.json' && isSupported(f.name))
+          .map(f =>
+            supabaseService.downloadFile(`simple_uploads/${f.name}`)
+              .then(buffer => ({ buffer, mimeType: getMimeType(f.name), filename: f.name }))
+          )
+      );
+      resultados = await facturaService.analizarMultipleArchivos(archivosData);
     }
     if (!resultados.length) return res.status(404).json({ error: 'No hay facturas procesadas' });
-    
+
     const ruta = path.join(TMP_DIR, 'facturas_extraidas.xlsx');
     await excelService.generarExcelSimple(resultados, ruta);
-    
+
     res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Content-Disposition': 'attachment; filename=facturas_extraidas.xlsx',
