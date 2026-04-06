@@ -514,7 +514,7 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
     { label: 'Moneda', field: 'moneda' },
     { label: 'Categoría', field: 'categoria' },
     { label: 'Tipo', field: 'tipo_comprobante' },
-    { label: 'Año Ejec.', field: 'fecha_ejecucion' },
+    { label: 'Ejercicio', field: 'fecha_ejecucion' },
     { label: 'Actualización', field: 'updatedAt' },
   ]
 
@@ -542,6 +542,11 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
 
   const anioBase = meta?.anio_presentacion ? parseInt(meta.anio_presentacion) : new Date().getFullYear()
 
+  const yearToEjercicioLabel = (year, base) => {
+    const n = year - base
+    return n === 0 ? `Ejercicio 0 - ${base}` : `Ejercicio ${n}`
+  }
+
   // Investment year columns derived from periodos: each control_YYYY → investment year YYYY-1
   const planColumns = useMemo(() => {
     const controlYears = periodos
@@ -553,7 +558,7 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
       { key: 'antes', label: 'Antes de presentación', sub: 'Facturas emitidas', locked: true },
       ...years.map((y, i) => ({
         key: String(y),
-        label: String(y),
+        label: yearToEjercicioLabel(y, anioBase),
         sub: i === 0 ? 'Año de presentación · después de presentación' : null,
         locked: false,
       })),
@@ -563,7 +568,7 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
   const yearOptions = useMemo(() => {
     const cols = planColumns.filter(c => !c.locked)
     if (cols.length > 0) return [{ v: '', l: '--' }, ...cols.map(c => ({ v: c.key, l: c.label }))]
-    return [{ v: '', l: '--' }, ...Array.from({ length: 4 }, (_, i) => ({ v: String(anioBase + i), l: String(anioBase + i) }))]
+    return [{ v: '', l: '--' }, ...Array.from({ length: 4 }, (_, i) => ({ v: String(anioBase + i), l: yearToEjercicioLabel(anioBase + i, anioBase) }))]
   }, [planColumns, anioBase])
 
   const getItemColumn = (item) => {
@@ -1027,7 +1032,7 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                           { label: 'Moneda', field: 'moneda' },
                           { label: 'Categoría', field: 'categoria' },
                           { label: 'Tipo', field: 'tipo_comprobante' },
-                          { label: 'Año Ejec.', field: 'fecha_ejecucion' },
+                          { label: 'Ejercicio', field: 'fecha_ejecucion' },
                           { label: 'Estado', field: null },
                         ].map(({ label, field }) => (
                           <th
@@ -1181,7 +1186,7 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                                   onOpen={setOpenDropdown}
                                 />
                               ) : (
-                                r.fecha_ejecucion ? r.fecha_ejecucion.substring(0, 4) : '--'
+                                r.fecha_ejecucion ? yearToEjercicioLabel(parseInt(r.fecha_ejecucion.substring(0, 4)), anioBase) : '--'
                               )}
                             </td>
                             {/* Estado */}
