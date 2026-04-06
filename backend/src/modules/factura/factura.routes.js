@@ -55,7 +55,7 @@ async function guardarResultadosDB(proyectoId, periodo, resultados) {
         numero_factura: r.numero_factura || null,
         proveedor: r.proveedor || null,
         rut: r.rut || null,
-        fecha: r.fecha || null,
+        fecha: formatearFecha(r.fecha) || null,
         monto: r.monto ? parseFloat(r.monto) : null,
         moneda: r.moneda || null,
         cantidad: r.cantidad ? parseInt(r.cantidad) : 1,
@@ -63,7 +63,7 @@ async function guardarResultadosDB(proyectoId, periodo, resultados) {
         rut_receptor: r.rut_receptor || null,
         razon_social_receptor: r.razon_social_receptor || null,
         tipo_comprobante: r.tipo_comprobante || null,
-        fecha_ejecucion: r.fecha_ejecucion || r.fecha || null,
+        fecha_ejecucion: formatearFecha(r.fecha_ejecucion) || formatearFecha(r.fecha) || null,
         texto_extraido: Boolean(r.texto_extraido),
       };
       if (r.id) {
@@ -144,7 +144,7 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/subir-y-procesa
           numero_factura: r.numero_factura || null,
           proveedor: r.proveedor || null,
           rut: r.rut || null,
-          fecha: r.fecha || null,
+          fecha: formatearFecha(r.fecha) || null,
           monto: r.monto ? parseFloat(r.monto) : null,
           moneda: r.moneda || null,
           cantidad: r.cantidad ? parseInt(r.cantidad) : 1,
@@ -152,7 +152,7 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/subir-y-procesa
           rut_receptor: r.rut_receptor || null,
           razon_social_receptor: r.razon_social_receptor || null,
           tipo_comprobante: r.tipo_comprobante || null,
-          fecha_ejecucion: r.fecha,
+          fecha_ejecucion: formatearFecha(r.fecha_ejecucion) || formatearFecha(r.fecha) || null,
           texto_extraido: Boolean(r.texto_extraido),
         })),
       });
