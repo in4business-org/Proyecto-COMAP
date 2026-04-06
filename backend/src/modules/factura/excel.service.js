@@ -159,6 +159,9 @@ class ExcelService {
 
     const sortedFacturas = this.sortFacturasForInsert(facturas);
 
+    // Contar inserciones por fila para poder recalcular fórmulas de totales
+    const insertionCounts = {};
+
     for (const factura of sortedFacturas) {
       const categoria = this.normalizeCategory(factura.categoria);
       const config = CATEGORY_CONFIG[categoria];
@@ -168,11 +171,57 @@ class ExcelService {
       }
 
       const rowNumber = config.insertRow;
+      insertionCounts[rowNumber] = (insertionCounts[rowNumber] || 0) + 1;
 
       ws.spliceRows(rowNumber, 0, []);
       this.copyStyleToNewRow(ws, rowNumber);
       this.writeFacturaRow(ws, rowNumber, factura);
     }
+
+    this._actualizarFormulasTotal(ws, insertionCounts);
+  }
+
+  // Calcula cuántas filas se insertaron en posiciones <= row
+  _getOffset(insertionCounts, row) {
+    return Object.entries(insertionCounts)
+      .filter(([r]) => parseInt(r) <= row)
+      .reduce((sum, [, count]) => sum + count, 0);
+  }
+
+  _actualizarFormulasTotal(ws, insertionCounts) {
+    const off = (row) => this._getOffset(insertionCounts, row);
+
+    // Filas originales en el template (antes de insertar facturas)
+    const new26 = 26 + off(26); // Subtotal Inversiones Físicas: SUM(M16:M25)
+    const new41 = 41 + off(41); // Subtotal Otros Costos: SUM(M30:M40)
+    const new42 = 42 + off(42); // referenciada en K49/K50
+    const new43 = 43 + off(43); // Total general: SUM(M26,M41)
+    const new45 = 45 + off(45); // SUMIF
+    const new46 = 46 + off(46); // +M43-M45
+    const new49 = 49 + off(49); // IFERROR en col K
+    const new50 = 50 + off(50); // Inversión total en col C
+
+    // M26 → subtotal IF: suma desde fila 16 (fija, por encima de inserciones) hasta justo antes de esta celda
+    ws.getCell(new26, 13).value = { formula: `SUM(M16:M${new26 - 1})` };
+
+    // M41 → subtotal OC: suma desde fila 30 (insertRow de Materiales, fija) hasta justo antes de esta celda
+    ws.getCell(new41, 13).value = { formula: `SUM(M${new26 + 3}:M${new41 - 1})` };
+
+    // M43 → total = subtotal IF + subtotal OC
+    ws.getCell(new43, 13).value = { formula: `SUM(M${new26},M${new41})` };
+
+    // M45 → SUMIF sobre todas las filas de datos
+    ws.getCell(new45, 13).value = { formula: `+SUMIF((D17:D${new43}),"SI",M17:M${new43})` };
+
+    // M46 → diferencia M43 - M45
+    ws.getCell(new46, 13).value = { formula: `+M${new43}-M${new45}` };
+
+    // C50 → Inversión total referenciando M43
+    ws.getCell(new50, 3).value = { formula: `+M${new43}` };
+
+    // K49, K50 → porcentaje referenciando M43 del CUADRO
+    const kFormula = `IFERROR(+'CRONOGRAMA DE INVERSIONES'!C19/'CUADRO DE INVERSIONES'!M${new43},0)`;
+    ws.getCell(new49, 11).value = { formula: kFormula };
   }
 
   _llenarCronogramaInversiones(ws, facturas, opciones) {
