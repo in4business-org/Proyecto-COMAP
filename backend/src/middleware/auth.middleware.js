@@ -47,7 +47,9 @@ const requireAuth = async (req, res, next) => {
     }
 
     // Cache miss: validate with Supabase (network call)
+    const authStart = performance.now();
     const { data: { user }, error } = await supabase.auth.getUser(token);
+    console.log(`  [AUTH] getUser -> ${(performance.now() - authStart).toFixed(0)}ms (cache miss)`);
 
     if (error || !user) {
       return res.status(401).json({ error: 'Acceso denegado: Token inválido o expirado' });

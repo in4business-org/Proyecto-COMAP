@@ -24,6 +24,24 @@ app.use(express.urlencoded({ extended: true }));
 
 const requireAuth = require('./middleware/auth.middleware');
 
+// ── Performance timing ────────────────────────────────────
+app.use((req, res, next) => {
+  const start = performance.now();
+  const originalSend = res.send.bind(res);
+  let logged = false;
+
+  res.send = function (body) {
+    if (!logged) {
+      logged = true;
+      const ms = (performance.now() - start).toFixed(0);
+      const tag = ms > 1000 ? 'SLOW' : ms > 300 ? 'WARN' : 'OK';
+      console.log(`[${tag}] ${req.method} ${req.originalUrl} -> ${res.statusCode} (${ms}ms)`);
+    }
+    return originalSend(body);
+  };
+  next();
+});
+
 // ── API Routes ─────────────────────────────────────────────
 app.use('/api/empresas', requireAuth, empresaRoutes);
 app.use('/api/empresas/:empresaId/proyectos', requireAuth, proyectoRoutes);
@@ -31,6 +49,30 @@ app.use('/api', requireAuth, facturaRoutes);
 app.use('/api/empresas/:empresaId/proyectos/:proyectoId/checklist', requireAuth, checklistRoutes);
 app.use('/api/empresas/:empresaId/proyectos/:proyectoId/simulador', requireAuth, simuladorRoutes);
 app.use('/api/cotizaciones', requireAuth, cotizacionRoutes);
+
+// ── Dashboard (empresas + proyectos in one query) ─────────
+app.get('/api/dashboard', requireAuth, async (_req, res) => {
+  try {
+    const empresas = await prisma.empresa.findMany({
+      include: { proyectos: true }
+    });
+    res.json(empresas.map(e => ({
+      ...e,
+      proyectos: e.proyectos.map(p => ({
+        id: p.id,
+        expediente: p.expediente,
+        fecha_creacion: p.fecha_creacion,
+        fecha_presentacion: p.fecha_presentacion,
+        anio_presentacion: p.anio_presentacion,
+        duracion_seguimiento: p.duracion_seguimiento,
+        cotizacion_ui: p.cotizacion_ui,
+        cotizacion_usd: p.cotizacion_usd,
+      }))
+    })));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // ── Health check ───────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
