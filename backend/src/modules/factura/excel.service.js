@@ -17,6 +17,20 @@ const CATEGORY_CONFIG = {
   'Maquinaria': { order: 1, insertRow: 17 },
 };
 
+const CRONOGRAMA_CONFIG = {
+  'Maquinaria': 13,
+  'Equipos': 14,
+  'Instalaciones': 15,
+  'Vehiculos': 16,
+  'MEIV/Imprevistos': 17,
+  'Materiales': 23,
+  'Mano de Obra Directa': 24,
+  'Mano de Obra Indirecta': 25,
+  'Leyes Sociales': 26,
+  'Honorarios': 27,
+  'OC/Imprevistos': 28,
+};
+
 class ExcelService {
   normalizeCategory(category) {
     return String(category || '').trim();
@@ -115,34 +129,13 @@ class ExcelService {
 
     // M = monto en UI: si USD → subtotal*C4/C5, si UYU → subtotal/C5
     const formula = moneda === 'USD'
-      ? `L${rowNumber}*$C$4/$C$5`
-      : `L${rowNumber}/$C$5`;
+      ? `${subtotal}*$C$4/$C$5`
+      : `${subtotal}/$C$5`;
     ws.getCell(rowNumber, 13).value = { formula };
   }
 
-  async generarExcelComap(facturas, rutaSalida, opciones = {}) {
-    const { cotizacion_usd, cotizacion_ui, fecha_cotizacion, fecha_presentacion, fecha_balance, sheetName } = opciones;
-
-    if (!fs.existsSync(TEMPLATE_CUADRO)) {
-      throw new Error(`Template not found: ${TEMPLATE_CUADRO}`);
-    }
-
-    if (!Array.isArray(facturas)) {
-      throw new Error('facturas debe ser un array');
-    }
-
-    fs.copyFileSync(TEMPLATE_CUADRO, rutaSalida);
-
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.readFile(rutaSalida);
-
-    const ws = sheetName
-      ? workbook.getWorksheet(sheetName)
-      : workbook.getWorksheet('CUADRO DE INVERSIONES') || workbook.worksheets[0];
-
-    if (!ws) {
-      throw new Error('No se encontró la hoja a procesar');
-    }
+  _llenarCuadroInversiones(ws, facturas, opciones) {
+    const { cotizacion_usd, cotizacion_ui, fecha_cotizacion, fecha_presentacion, fecha_balance } = opciones;
 
     if (fecha_cotizacion) {
       ws.getCell(3, 3).value = normalizarFecha(fecha_cotizacion);
@@ -179,6 +172,97 @@ class ExcelService {
       ws.spliceRows(rowNumber, 0, []);
       this.copyStyleToNewRow(ws, rowNumber);
       this.writeFacturaRow(ws, rowNumber, factura);
+    }
+  }
+
+  _llenarCronogramaInversiones(ws, facturas, opciones) {
+    const { cotizacion_ui, cotizacion_usd, fecha_presentacion } = opciones;
+
+    let anio_presentacion = opciones.anio_presentacion;
+    if (!anio_presentacion && fecha_presentacion) {
+      anio_presentacion = new Date(fecha_presentacion).getFullYear();
+    }
+
+    if (!anio_presentacion || !cotizacion_ui) return;
+
+    const uiRate = parseFloat(cotizacion_ui);
+    const usdRate = cotizacion_usd ? parseFloat(cotizacion_usd) : 0;
+
+    // sums[rowNum][colNum] = total en UI
+    const sums = {};
+
+    for (const factura of facturas) {
+      const categoria = this.normalizeCategory(factura.categoria);
+      const rowNum = CRONOGRAMA_CONFIG[categoria];
+      if (!rowNum) continue;
+
+      const fechaEjecucion = factura.fecha_ejecucion;
+      if (!fechaEjecucion) continue;
+
+      const anioEjecucion = parseInt(fechaEjecucion.substring(0, 4), 10);
+      if (isNaN(anioEjecucion)) continue;
+
+      const diff = anioEjecucion - anio_presentacion;
+
+      let colNum;
+      if (diff === 0) {
+        colNum = factura.tipo_comprobante === 'Presupuesto' ? 4 : 3;
+      } else if (diff >= 1 && diff <= 10) {
+        colNum = diff + 4; // diff=1 → col 5, diff=2 → col 6, ..., diff=10 → col 14
+      } else {
+        continue;
+      }
+
+      const monto = normalizarMonto(factura.monto ?? factura.subtotal ?? factura.valor_monto);
+      if (!monto) continue;
+
+      let montoUI;
+      if (factura.moneda === 'USD') {
+        montoUI = (monto * usdRate) / uiRate;
+      } else {
+        montoUI = monto / uiRate;
+      }
+
+      if (!sums[rowNum]) sums[rowNum] = {};
+      sums[rowNum][colNum] = (sums[rowNum][colNum] || 0) + montoUI;
+    }
+
+    for (const rowNum of Object.keys(sums)) {
+      for (const colNum of Object.keys(sums[rowNum])) {
+        ws.getCell(parseInt(rowNum), parseInt(colNum)).value = sums[rowNum][colNum];
+      }
+    }
+  }
+
+  async generarExcelComap(facturas, rutaSalida, opciones = {}) {
+    const { sheetName } = opciones;
+
+    if (!fs.existsSync(TEMPLATE_CUADRO)) {
+      throw new Error(`Template not found: ${TEMPLATE_CUADRO}`);
+    }
+
+    if (!Array.isArray(facturas)) {
+      throw new Error('facturas debe ser un array');
+    }
+
+    fs.copyFileSync(TEMPLATE_CUADRO, rutaSalida);
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(rutaSalida);
+
+    const wsCuadro = sheetName
+      ? workbook.getWorksheet(sheetName)
+      : workbook.getWorksheet('CUADRO DE INVERSIONES') || workbook.worksheets[0];
+
+    if (!wsCuadro) {
+      throw new Error('No se encontró la hoja a procesar');
+    }
+
+    this._llenarCuadroInversiones(wsCuadro, facturas, opciones);
+
+    const wsCronograma = workbook.getWorksheet('CRONOGRAMA DE INVERSIONES');
+    if (wsCronograma) {
+      this._llenarCronogramaInversiones(wsCronograma, facturas, opciones);
     }
 
     workbook.calcProperties = { fullCalcOnLoad: true };

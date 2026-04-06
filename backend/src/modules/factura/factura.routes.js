@@ -90,7 +90,7 @@ async function guardarResultadosDB(proyectoId, periodo, resultados) {
       }
       return tx.factura.create({ data });
     }));
-  });
+  }, { timeout: 30000 });
 }
 
 /** Read persisted results from db */
