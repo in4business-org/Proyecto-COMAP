@@ -221,7 +221,7 @@ function CellDatePicker({ id, value, onChange, open, onOpen }) {
 
 /* ─── Facturas ────────────────────────────────────── */
 
-function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
+function FacturasTab({ empresaId, proyectoId, periodos, meta, empresa }) {
   const [activePeriodo, setActivePeriodo] = useState('presentacion')
   const [files, setFiles] = useState([])
   const [uploading, setUploading] = useState(false)
@@ -441,6 +441,10 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
   }
 
   const handleExport = async () => {
+    if (!empresa?.fecha_balance) {
+      const ok = window.confirm('La empresa no tiene fecha de balance cargada.\n¿Querés continuar de todas formas?')
+      if (!ok) return
+    }
     setExporting(true)
     try {
       const blob = await factApi.exportExcel(empresaId, proyectoId, activePeriodo)
@@ -547,6 +551,15 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
     return n === 0 ? `Ejercicio 0 - ${base}` : `Ejercicio ${n}`
   }
 
+  // Extrae el año de fecha_ejecucion, que se guarda como DD/MM/YYYY
+  const getYearFromFechaEjecucion = (fe) => {
+    if (!fe) return null
+    const parts = fe.split('/')
+    if (parts.length === 3) return parseInt(parts[2])
+    // fallback para registros viejos en formato YYYY-MM-DD
+    return parseInt(fe.substring(0, 4))
+  }
+
   // Investment year columns derived from periodos: each control_YYYY → investment year YYYY-1
   const planColumns = useMemo(() => {
     const controlYears = periodos
@@ -574,7 +587,7 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
   const getItemColumn = (item) => {
     if (item.tipo_comprobante === 'Factura') return 'antes'
     if (!item.fecha_ejecucion) return String(anioBase)
-    const year = parseInt(item.fecha_ejecucion.substring(0, 4))
+    const year = getYearFromFechaEjecucion(item.fecha_ejecucion)
     // clamp to first available year column
     const available = planColumns.filter(c => !c.locked).map(c => parseInt(c.key))
     if (!available.length) return String(anioBase)
@@ -589,7 +602,7 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
     if (colKey === 'antes') return
     const itemId = e.dataTransfer.getData('text/plain')
     if (!itemId || !results) return
-    setResults(prev => prev.map(r => r.id === itemId ? { ...r, fecha_ejecucion: `${colKey}-01-01` } : r))
+    setResults(prev => prev.map(r => r.id === itemId ? { ...r, fecha_ejecucion: `01/01/${colKey}` } : r))
     setKanbanDirty(true)
   }
 
@@ -1179,14 +1192,14 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
                               {isEditing ? (
                                 <CellDropdown
                                   id={`${r.id}-anio-ejec`}
-                                  value={r.fecha_ejecucion ? r.fecha_ejecucion.substring(0, 4) : ''}
+                                  value={r.fecha_ejecucion ? String(getYearFromFechaEjecucion(r.fecha_ejecucion)) : ''}
                                   options={yearOptions}
-                                  onChange={(v) => handleFieldChange(r.id, 'fecha_ejecucion', v ? `${v}-01-01` : null)}
+                                  onChange={(v) => handleFieldChange(r.id, 'fecha_ejecucion', v ? `01/01/${v}` : null)}
                                   open={openDropdown === `${r.id}-anio-ejec`}
                                   onOpen={setOpenDropdown}
                                 />
                               ) : (
-                                r.fecha_ejecucion ? yearToEjercicioLabel(parseInt(r.fecha_ejecucion.substring(0, 4)), anioBase) : '--'
+                                r.fecha_ejecucion ? yearToEjercicioLabel(getYearFromFechaEjecucion(r.fecha_ejecucion), anioBase) : '--'
                               )}
                             </td>
                             {/* Estado */}
@@ -1438,7 +1451,7 @@ export default function ProyectoDetail() {
 
         {/* Facturas (vista principal) */}
         <div className="pb-10">
-          <FacturasTab empresaId={empresaId} proyectoId={proyectoId} periodos={periodos} meta={meta} />
+          <FacturasTab empresaId={empresaId} proyectoId={proyectoId} periodos={periodos} meta={meta} empresa={empresa} />
         </div>
       </div>
 

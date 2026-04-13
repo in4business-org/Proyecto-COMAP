@@ -16,6 +16,21 @@ function addYears(dateStr, years) {
   return d
 }
 
+// Devuelve la fecha del control anual yr.
+// Si la empresa tiene fecha_balance, usa su día/mes con año = presentacion + yr.
+// Si no, cae a fecha_presentacion + yr años.
+function controlDate(fechaPresentacion, fechaBalance, yr) {
+  const base = new Date(fechaPresentacion)
+  if (fechaBalance) {
+    const balance = new Date(fechaBalance)
+    const result = new Date(balance)
+    result.setFullYear(base.getFullYear() + yr)
+    result.setDate(result.getDate() + 60)
+    return result
+  }
+  return addYears(fechaPresentacion, yr)
+}
+
 function daysFromNow(date) {
   const now = new Date()
   now.setHours(0, 0, 0, 0)
@@ -80,7 +95,7 @@ export default function Dashboard() {
       const sublabel = empresa?.nombre ? `${empresa.nombre} · ${mesAnio}` : `Proyecto ${mesAnio}`
 
       for (let yr = 1; yr <= p.duracion_seguimiento; yr++) {
-        const date = addYears(p.fecha_presentacion, yr)
+        const date = controlDate(p.fecha_presentacion, empresa?.fecha_balance, yr)
         if (date >= pastLimit && date <= futureLimit) {
           events.push({ key: `${p.id}-yr${yr}`, date, year: yr, total: p.duracion_seguimiento, sublabel, empresa, proyecto: p })
         }
@@ -102,7 +117,7 @@ export default function Dashboard() {
       if (!p.fecha_presentacion || !p.duracion_seguimiento) return
       const empresa = empresas.find(e => String(e.id) === String(p.empresaId))
       for (let yr = 1; yr <= p.duracion_seguimiento; yr++) {
-        const date = addYears(p.fecha_presentacion, yr)
+        const date = controlDate(p.fecha_presentacion, empresa?.fecha_balance, yr)
         if (date >= start && date <= end) {
           const days = daysFromNow(date)
           events.push({
