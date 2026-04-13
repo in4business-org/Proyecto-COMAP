@@ -221,7 +221,7 @@ function CellDatePicker({ id, value, onChange, open, onOpen }) {
 
 /* ─── Facturas ────────────────────────────────────── */
 
-function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
+function FacturasTab({ empresaId, proyectoId, periodos, meta, empresa }) {
   const [activePeriodo, setActivePeriodo] = useState('presentacion')
   const [files, setFiles] = useState([])
   const [uploading, setUploading] = useState(false)
@@ -441,6 +441,10 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta }) {
   }
 
   const handleExport = async () => {
+    if (!empresa?.fecha_balance) {
+      const ok = window.confirm('La empresa no tiene fecha de balance cargada.\n¿Querés continuar de todas formas?')
+      if (!ok) return
+    }
     setExporting(true)
     try {
       const blob = await factApi.exportExcel(empresaId, proyectoId, activePeriodo)
@@ -1447,7 +1451,7 @@ export default function ProyectoDetail() {
 
         {/* Facturas (vista principal) */}
         <div className="pb-10">
-          <FacturasTab empresaId={empresaId} proyectoId={proyectoId} periodos={periodos} meta={meta} />
+          <FacturasTab empresaId={empresaId} proyectoId={proyectoId} periodos={periodos} meta={meta} empresa={empresa} />
         </div>
       </div>
 
