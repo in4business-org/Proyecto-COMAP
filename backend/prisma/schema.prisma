@@ -27,9 +27,9 @@ model Empresa {
 }
 
 model Proyecto {
-  id                   String     @id @default(uuid())
+  id                   String         @id @default(uuid())
   empresaId            String
-  empresa              Empresa    @relation(fields: [empresaId], references: [id])
+  empresa              Empresa        @relation(fields: [empresaId], references: [id])
   fecha_creacion       String
   fecha_presentacion   String?
   anio_presentacion    Int?
@@ -39,10 +39,27 @@ model Proyecto {
   expediente           String?
   checklists           ChecklistItem[]
   facturas             Factura[]
-  createdAt            DateTime   @default(now())
-  updatedAt            DateTime   @updatedAt
+  clienteTokens        ClienteToken[]
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
 
   @@index([empresaId])
+}
+
+model ClienteToken {
+  id         String    @id @default(uuid())
+  token      String    @unique
+  proyectoId String
+  proyecto   Proyecto  @relation(fields: [proyectoId], references: [id], onDelete: Cascade)
+  nombre     String
+  activo     Boolean   @default(true)
+  expira_en  DateTime?
+  ultimo_uso DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([token])
+  @@index([proyectoId])
 }
 
 model ChecklistItem {

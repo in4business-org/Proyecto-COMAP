@@ -4,14 +4,14 @@ import { createPortal } from 'react-dom'
 import {
   ArrowLeft, Upload, Download, FileText,
   CheckSquare, Check, FolderOpen, Plus, RefreshCw, X,
-  ChevronLeft, ChevronRight, CalendarDays,
+  ChevronLeft, ChevronRight, CalendarDays, Share2, Copy,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { LoadingState, EmptyState, Spinner } from '@/components/ui/loading'
 import { cn } from '@/lib/utils'
-import { empresas as empApi, proyectos as projApi, facturas as factApi, checklist as checkApi, cotizaciones as cotApi } from '@/lib/api'
+import { empresas as empApi, proyectos as projApi, facturas as factApi, checklist as checkApi, cotizaciones as cotApi, clienteTokens as tokensApi } from '@/lib/api'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 
 /* ─── CellDropdown ────────────────────────────────── */
@@ -1386,6 +1386,186 @@ function ChecklistTab({ empresaId, proyectoId, onCountUpdate }) {
   )
 }
 
+/* ─── TokenManager ────────────────────────────────── */
+
+function TokenManager({ empresaId, proyectoId, open, onClose }) {
+  const [tokens, setTokens] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [nombre, setNombre] = useState('')
+  const [expiraEn, setExpiraEn] = useState('')
+  const [copiedId, setCopiedId] = useState(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const data = await tokensApi.list(empresaId, proyectoId)
+      setTokens(data)
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setLoading(false)
+    }
+  }, [empresaId, proyectoId])
+
+  useEffect(() => {
+    if (open) load()
+  }, [open, load])
+
+  const handleCreate = async () => {
+    if (!nombre.trim()) return
+    setCreating(true)
+    try {
+      await tokensApi.create(empresaId, proyectoId, nombre.trim(), expiraEn || null)
+      setNombre('')
+      setExpiraEn('')
+      await load()
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  const handleRevoke = async (tokenId) => {
+    if (!window.confirm('¿Revocar este acceso? El cliente perderá acceso inmediatamente.')) return
+    try {
+      await tokensApi.revoke(empresaId, proyectoId, tokenId)
+      await load()
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  const copyLink = (token) => {
+    const url = `${window.location.origin}/cliente/${token}`
+    navigator.clipboard.writeText(url).then(() => {
+      setCopiedId(token)
+      setTimeout(() => setCopiedId(null), 2000)
+    })
+  }
+
+  if (!open) return null
+
+  return createPortal(
+    <>
+      {/* Overlay */}
+      <div
+        className="fixed inset-0 bg-black/40 z-50"
+        onClick={onClose}
+      />
+      {/* Modal */}
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+        <div
+          className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-md flex flex-col max-h-[80vh] pointer-events-auto"
+          onClick={e => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between px-5 py-4 border-b border-border/60 shrink-0">
+            <div>
+              <h2 className="text-[14px] font-semibold">Compartir con cliente</h2>
+              <p className="text-[12px] text-muted-foreground mt-0.5">
+                Generá un link para que el cliente vea el proyecto y suba documentos
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              className="rounded-md p-1.5 hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
+            >
+              <X size={15} />
+            </button>
+          </div>
+
+          {/* Formulario nuevo token */}
+          <div className="px-5 py-4 border-b border-border/60 space-y-3 shrink-0">
+            <div className="space-y-2">
+              <Input
+                placeholder="Nombre del acceso (ej. Acceso cliente enero 2026)"
+                value={nombre}
+                onChange={e => setNombre(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleCreate()}
+                className="text-[13px] h-9"
+              />
+              <div className="flex items-center gap-2">
+                <div className="flex-1">
+                  <label className="text-[11px] text-muted-foreground block mb-1">Vence el (opcional)</label>
+                  <Input
+                    type="datetime-local"
+                    value={expiraEn}
+                    onChange={e => setExpiraEn(e.target.value)}
+                    className="text-[12px] h-8"
+                  />
+                </div>
+                <Button
+                  onClick={handleCreate}
+                  disabled={creating || !nombre.trim()}
+                  className="self-end h-8 text-[12px] px-3"
+                >
+                  {creating ? <Spinner className="w-3.5 h-3.5" /> : 'Generar link'}
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {/* Lista de tokens */}
+          <div className="flex-1 overflow-y-auto px-5 py-3 space-y-2">
+            {loading && (
+              <div className="flex items-center justify-center py-6">
+                <Spinner className="w-4 h-4" />
+              </div>
+            )}
+            {!loading && tokens.length === 0 && (
+              <p className="text-[12px] text-muted-foreground text-center py-6">
+                No hay links generados aún.
+              </p>
+            )}
+            {!loading && tokens.map(t => (
+              <div
+                key={t.id}
+                className={cn(
+                  "flex items-center gap-3 p-3 rounded-lg border text-[12px]",
+                  t.activo ? "border-border bg-card" : "border-border/40 bg-muted/30 opacity-60"
+                )}
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium truncate">{t.nombre}</p>
+                  <p className="text-muted-foreground mt-0.5">
+                    {t.activo ? 'Activo' : 'Revocado'}
+                    {t.expira_en && ` · Vence ${new Date(t.expira_en).toLocaleDateString('es-UY')}`}
+                    {t.ultimo_uso && ` · Último uso ${new Date(t.ultimo_uso).toLocaleDateString('es-UY')}`}
+                  </p>
+                </div>
+                {t.activo && (
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      onClick={() => copyLink(t.token)}
+                      title="Copiar link"
+                      className="flex items-center gap-1 px-2 py-1 rounded border border-border/60 hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
+                    >
+                      {copiedId === t.token
+                        ? <><Check size={12} className="text-green-500" /><span className="text-green-500">Copiado</span></>
+                        : <><Copy size={12} /><span>Copiar link</span></>
+                      }
+                    </button>
+                    <button
+                      onClick={() => handleRevoke(t.id)}
+                      title="Revocar acceso"
+                      className="px-2 py-1 rounded border border-destructive/30 hover:bg-destructive/10 text-destructive/70 hover:text-destructive transition-colors"
+                    >
+                      Revocar
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </>,
+    document.body
+  )
+}
+
 /* ─── Main ────────────────────────────────────────── */
 
 export default function ProyectoDetail() {
@@ -1395,6 +1575,7 @@ export default function ProyectoDetail() {
   const [loading, setLoading] = useState(true)
   const [checklistOpen, setChecklistOpen] = useState(false)
   const [checklistPendientes, setChecklistPendientes] = useState(null)
+  const [tokenModalOpen, setTokenModalOpen] = useState(false)
 
   useEffect(() => {
     Promise.all([
@@ -1435,18 +1616,27 @@ export default function ProyectoDetail() {
               </p>
             </div>
           </div>
-          <button
-            onClick={() => setChecklistOpen(o => !o)}
-            className="flex items-center gap-2 px-3 h-9 rounded-lg border border-border/60 bg-card hover:bg-accent hover:border-primary/40 transition-all text-[12px] font-medium text-muted-foreground hover:text-foreground shrink-0"
-          >
-            <CheckSquare size={14} strokeWidth={2} />
-            Checklist
-            {checklistPendientes !== null && checklistPendientes > 0 && (
-              <span className="bg-warning/20 text-warning text-[10px] rounded-full px-1.5 py-0.5 font-semibold leading-none">
-                {checklistPendientes}
-              </span>
-            )}
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => setTokenModalOpen(true)}
+              className="flex items-center gap-2 px-3 h-9 rounded-lg border border-border/60 bg-card hover:bg-accent hover:border-primary/40 transition-all text-[12px] font-medium text-muted-foreground hover:text-foreground"
+            >
+              <Share2 size={14} strokeWidth={2} />
+              Compartir
+            </button>
+            <button
+              onClick={() => setChecklistOpen(o => !o)}
+              className="flex items-center gap-2 px-3 h-9 rounded-lg border border-border/60 bg-card hover:bg-accent hover:border-primary/40 transition-all text-[12px] font-medium text-muted-foreground hover:text-foreground"
+            >
+              <CheckSquare size={14} strokeWidth={2} />
+              Checklist
+              {checklistPendientes !== null && checklistPendientes > 0 && (
+                <span className="bg-warning/20 text-warning text-[10px] rounded-full px-1.5 py-0.5 font-semibold leading-none">
+                  {checklistPendientes}
+                </span>
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Facturas (vista principal) */}
@@ -1455,6 +1645,14 @@ export default function ProyectoDetail() {
         </div>
       </div>
 
+
+      {/* Modal compartir con cliente */}
+      <TokenManager
+        empresaId={empresaId}
+        proyectoId={proyectoId}
+        open={tokenModalOpen}
+        onClose={() => setTokenModalOpen(false)}
+      />
 
       {/* Panel checklist */}
       <div className={cn(

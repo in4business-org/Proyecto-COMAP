@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx prisma:*)",
+      "Bash(node -e \"require\\('./backend/src/modules/cliente/cliente.service.js'\\)\")"
+    ]
+  }
+}

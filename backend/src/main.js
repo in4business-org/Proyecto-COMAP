@@ -11,6 +11,7 @@ const facturaRoutes = require('./modules/factura/factura.routes');
 const checklistRoutes = require('./modules/checklist/checklist.routes');
 const simuladorRoutes = require('./modules/simulador/simulador.routes');
 const cotizacionRoutes = require('./modules/cotizacion/cotizacion.routes');
+const { clienteRouter, adminRouter } = require('./modules/cliente/cliente.routes');
 
 const app = express();
 
@@ -43,6 +44,11 @@ app.use((req, res, next) => {
 });
 
 // ── API Routes ─────────────────────────────────────────────
+// Portal de cliente (sin requireAuth — usa token propio en middleware interno)
+app.use('/api/cliente', clienteRouter);
+// Gestión de tokens (protegido)
+app.use('/api/empresas/:empresaId/proyectos/:proyectoId/tokens', requireAuth, adminRouter);
+
 app.use('/api/empresas', requireAuth, empresaRoutes);
 app.use('/api/empresas/:empresaId/proyectos', requireAuth, proyectoRoutes);
 app.use('/api', requireAuth, facturaRoutes);

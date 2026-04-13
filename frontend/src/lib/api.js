@@ -159,6 +159,21 @@ export const cotizaciones = {
   getMesAnterior: (fecha) => request(`/cotizaciones/mes-anterior${fecha ? `?fecha=${encodeURIComponent(fecha)}` : ''}`),
 };
 
+// -- Tokens de acceso para clientes
+export const clienteTokens = {
+  list: (empresaId, proyectoId) =>
+    request(`/empresas/${empresaId}/proyectos/${proyectoId}/tokens`),
+  create: (empresaId, proyectoId, nombre, expira_en) =>
+    request(`/empresas/${empresaId}/proyectos/${proyectoId}/tokens`, {
+      method: 'POST',
+      body: JSON.stringify({ nombre, expira_en: expira_en || null }),
+    }),
+  revoke: (empresaId, proyectoId, tokenId) =>
+    request(`/empresas/${empresaId}/proyectos/${proyectoId}/tokens/${tokenId}`, {
+      method: 'DELETE',
+    }),
+};
+
 // -- Simulador
 export const simulador = {
   download: (empresaId, proyectoId) =>

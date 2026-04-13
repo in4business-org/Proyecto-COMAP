@@ -13,6 +13,7 @@ const ProyectoDetail = lazy(() => import('./pages/ProyectoDetail'))
 const UserSettings = lazy(() => import('./pages/UserSettings'))
 const OrgSettings = lazy(() => import('./pages/OrgSettings'))
 const InboxPage = lazy(() => import('./pages/Inbox'))
+const ClienteView = lazy(() => import('./pages/ClienteView'))
 
 export default function App() {
   return (
@@ -22,7 +23,10 @@ export default function App() {
         <Suspense fallback={null}>
         <Routes>
           <Route path="/login" element={<Login />} />
-          
+
+          {/* Portal de cliente: acceso público con token */}
+          <Route path="/cliente/:token" element={<ClienteView />} />
+
           {/* Todas las rutas debajo de ProtectedRoute requieren login */}
           <Route element={<ProtectedRoute />}>
             <Route element={<Layout />}>
