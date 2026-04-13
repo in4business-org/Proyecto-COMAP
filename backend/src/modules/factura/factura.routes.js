@@ -10,7 +10,15 @@ const empresaService = require('../empresa/empresa.service');
 const supabaseService = require('../../config/supabase.config');
 const prisma = require('../../config/prisma');
 const cotizacionService = require('../cotizacion/cotizacion.service');
-const { formatearFecha } = require('../../common/utils/normalize');
+const { formatearFecha, normalizarFecha } = require('../../common/utils/normalize');
+
+/** Normaliza cualquier valor de fecha (Date, DD/MM/YYYY, YYYY-MM-DD) a string DD/MM/YYYY */
+function toFechaDDMMYYYY(val) {
+  if (!val) return null;
+  if (val instanceof Date) return formatearFecha(val);
+  const date = normalizarFecha(val);
+  return date ? formatearFecha(date) : null;
+}
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
 const router = Router({ mergeParams: true });
@@ -55,7 +63,7 @@ async function guardarResultadosDB(proyectoId, periodo, resultados) {
         numero_factura: r.numero_factura || null,
         proveedor: r.proveedor || null,
         rut: r.rut || null,
-        fecha: formatearFecha(r.fecha) || null,
+        fecha: toFechaDDMMYYYY(r.fecha) || null,
         monto: r.monto ? parseFloat(r.monto) : null,
         moneda: r.moneda || null,
         cantidad: r.cantidad ? parseInt(r.cantidad) : 1,
@@ -63,7 +71,7 @@ async function guardarResultadosDB(proyectoId, periodo, resultados) {
         rut_receptor: r.rut_receptor || null,
         razon_social_receptor: r.razon_social_receptor || null,
         tipo_comprobante: r.tipo_comprobante || null,
-        fecha_ejecucion: formatearFecha(r.fecha_ejecucion) || formatearFecha(r.fecha) || null,
+        fecha_ejecucion: toFechaDDMMYYYY(r.fecha_ejecucion) || toFechaDDMMYYYY(r.fecha) || null,
         texto_extraido: Boolean(r.texto_extraido),
       };
       if (r.id) {
@@ -144,7 +152,7 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/subir-y-procesa
           numero_factura: r.numero_factura || null,
           proveedor: r.proveedor || null,
           rut: r.rut || null,
-          fecha: formatearFecha(r.fecha) || null,
+          fecha: toFechaDDMMYYYY(r.fecha) || null,
           monto: r.monto ? parseFloat(r.monto) : null,
           moneda: r.moneda || null,
           cantidad: r.cantidad ? parseInt(r.cantidad) : 1,
@@ -152,7 +160,7 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/subir-y-procesa
           rut_receptor: r.rut_receptor || null,
           razon_social_receptor: r.razon_social_receptor || null,
           tipo_comprobante: r.tipo_comprobante || null,
-          fecha_ejecucion: formatearFecha(r.fecha_ejecucion) || formatearFecha(r.fecha) || null,
+          fecha_ejecucion: toFechaDDMMYYYY(r.fecha_ejecucion) || toFechaDDMMYYYY(r.fecha) || null,
           texto_extraido: Boolean(r.texto_extraido),
         })),
       });
@@ -367,7 +375,7 @@ router.get('/empresas/:empresaId/proyectos/:proyectoId/:periodo/template-importa
       { header: 'cantidad', key: 'cantidad', width: 10 },
       { header: 'categoria', key: 'categoria', width: 28 },
       { header: 'tipo_comprobante (Factura o Presupuesto)', key: 'tipo_comprobante', width: 32 },
-      { header: 'fecha_ejecucion (YYYY-MM-DD)', key: 'fecha_ejecucion', width: 30 },
+      { header: 'fecha_ejecucion (DD/MM/YYYY)', key: 'fecha_ejecucion', width: 30 },
     ];
     ws.getColumn(5).numFmt = 'DD/MM/YYYY';
     ws.getRow(1).font = { bold: true };
@@ -458,13 +466,16 @@ router.patch('/empresas/:empresaId/proyectos/:proyectoId/facturas/:facturaId/fec
     const factura = await prisma.factura.findFirst({ where: { id: facturaId, proyectoId } });
     if (!factura) return res.status(404).json({ error: 'Factura no encontrada' });
 
-    // Conserva mes y día existentes, solo cambia el año
+    // Conserva mes y día existentes en DD/MM/YYYY, solo cambia el año
     let nuevaFechaEjecucion;
     if (factura.fecha_ejecucion) {
-      const partes = factura.fecha_ejecucion.split('-');
-      nuevaFechaEjecucion = `${anioInt}-${partes[1] || '01'}-${partes[2] || '01'}`;
+      const partes = factura.fecha_ejecucion.split('/');
+      // DD/MM/YYYY → partes[0]=DD, partes[1]=MM, partes[2]=YYYY
+      const dd = partes[0] || '01';
+      const mm = partes[1] || '01';
+      nuevaFechaEjecucion = `${dd}/${mm}/${anioInt}`;
     } else {
-      nuevaFechaEjecucion = `${anioInt}-01-01`;
+      nuevaFechaEjecucion = `01/01/${anioInt}`;
     }
 
     const updated = await prisma.factura.update({
