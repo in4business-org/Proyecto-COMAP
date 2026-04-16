@@ -13,6 +13,7 @@ const ProyectoDetail = lazy(() => import('./pages/ProyectoDetail'))
 const UserSettings = lazy(() => import('./pages/UserSettings'))
 const OrgSettings = lazy(() => import('./pages/OrgSettings'))
 const InboxPage = lazy(() => import('./pages/Inbox'))
+const Agente = lazy(() => import('./pages/Agente'))
 
 export default function App() {
   return (
@@ -31,6 +32,7 @@ export default function App() {
               <Route path="/empresas/:empresaId" element={<EmpresaDetail />} />
               <Route path="/empresas/:empresaId/proyectos/:proyectoId" element={<ProyectoDetail />} />
               <Route path="/inbox" element={<InboxPage />} />
+              <Route path="/agente" element={<Agente />} />
               <Route path="/settings/user" element={<UserSettings />} />
               <Route path="/settings/organization" element={<OrgSettings />} />
             </Route>

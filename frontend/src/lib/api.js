@@ -159,6 +159,25 @@ export const cotizaciones = {
   getMesAnterior: (fecha) => request(`/cotizaciones/mes-anterior${fecha ? `?fecha=${encodeURIComponent(fecha)}` : ''}`),
 };
 
+// -- Chatbot
+export const chatbot = {
+  sendMessage: (message, attachments = []) => {
+    if (attachments.length > 0) {
+      const fd = new FormData();
+      fd.append('message', message);
+      attachments.forEach(f => fd.append('files', f));
+      return request('/chatbot/message', { method: 'POST', body: fd });
+    }
+    return request('/chatbot/message', {
+      method: 'POST',
+      body: JSON.stringify({ message }),
+    });
+  },
+  getHistory: () => request('/chatbot/history'),
+  newConversation: () => request('/chatbot/new', { method: 'POST' }),
+  handoff: () => request('/chatbot/handoff', { method: 'POST' }),
+};
+
 // -- Simulador
 export const simulador = {
   download: (empresaId, proyectoId) =>

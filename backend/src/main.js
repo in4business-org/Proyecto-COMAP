@@ -1,5 +1,10 @@
 require('dotenv').config();
 
+// Alias GEMINI_API_KEY → GOOGLE_GENERATIVE_AI_API_KEY for @ai-sdk/google
+if (process.env.GEMINI_API_KEY && !process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
+  process.env.GOOGLE_GENERATIVE_AI_API_KEY = process.env.GEMINI_API_KEY;
+}
+
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -11,6 +16,7 @@ const facturaRoutes = require('./modules/factura/factura.routes');
 const checklistRoutes = require('./modules/checklist/checklist.routes');
 const simuladorRoutes = require('./modules/simulador/simulador.routes');
 const cotizacionRoutes = require('./modules/cotizacion/cotizacion.routes');
+const chatbotRoutes = require('./modules/chatbot/chatbot.routes');
 
 const app = express();
 
@@ -49,6 +55,7 @@ app.use('/api', requireAuth, facturaRoutes);
 app.use('/api/empresas/:empresaId/proyectos/:proyectoId/checklist', requireAuth, checklistRoutes);
 app.use('/api/empresas/:empresaId/proyectos/:proyectoId/simulador', requireAuth, simuladorRoutes);
 app.use('/api/cotizaciones', requireAuth, cotizacionRoutes);
+app.use('/api/chatbot', requireAuth, chatbotRoutes);
 
 // ── Dashboard (empresas + proyectos in one query) ─────────
 app.get('/api/dashboard', requireAuth, async (_req, res) => {

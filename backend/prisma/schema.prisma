@@ -22,6 +22,7 @@ model Empresa {
   fecha_balance         String?
   tipo_contribuyente    String?
   proyectos             Proyecto[]
+  usuarios              UserEmpresa[]
   createdAt             DateTime   @default(now())
   updatedAt             DateTime   @updatedAt
 }
@@ -92,4 +93,37 @@ model Cotizacion {
   valor_ui  Float
   valor_usd Float
   createdAt DateTime @default(now())
+}
+
+model UserEmpresa {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  empresaId String
+  empresa   Empresa  @relation(fields: [empresaId], references: [id])
+  role      String   @default("cliente")
+  createdAt DateTime @default(now())
+}
+
+model ChatConversation {
+  id        String        @id @default(uuid())
+  userId    String
+  empresaId String?
+  status    String        @default("active")
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  messages  ChatMessage[]
+}
+
+model ChatMessage {
+  id             String           @id @default(uuid())
+  conversationId String
+  conversation   ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           String
+  content        String
+  toolName       String?
+  toolArgs       String?
+  attachments    String?
+  createdAt      DateTime         @default(now())
+
+  @@index([conversationId, createdAt])
 }

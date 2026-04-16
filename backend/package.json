@@ -9,16 +9,19 @@
     "postinstall": "prisma generate"
   },
   "dependencies": {
+    "@ai-sdk/google": "^3.0.63",
     "@google/genai": "^1.45.0",
     "@prisma/client": "^5.22.0",
     "@supabase/supabase-js": "^2.99.3",
+    "ai": "^6.0.159",
     "cors": "^2.8.5",
     "dotenv": "^17.3.1",
     "exceljs": "^4.4.0",
     "express": "^5.1.0",
     "multer": "^2.0.1",
     "uuid": "^13.0.0",
-    "xml2js": "^0.6.2"
+    "xml2js": "^0.6.2",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "nodemon": "^3.1.9",

@@ -13,6 +13,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Inbox,
+  MessageCircle,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { empresas as empApi, proyectos as projApi } from '@/lib/api'
@@ -202,31 +203,49 @@ export function Sidebar() {
                 >
                   <Inbox size={16} strokeWidth={1.8} className="shrink-0" />
                 </NavLink>
+                <NavLink
+                  to="/agente"
+                  onClick={() => setMobileOpen(false)}
+                  title="Asistente COMAP"
+                  className={navItemClass(isActive('/agente'))}
+                >
+                  <MessageCircle size={16} strokeWidth={1.8} className="shrink-0" />
+                </NavLink>
               </>
             ) : (
-              <div className="flex items-center gap-1">
+              <>
+                <div className="flex items-center gap-1">
+                  <NavLink
+                    to="/"
+                    onClick={() => setMobileOpen(false)}
+                    className={cn(navItemClass(isActive('/')), 'flex-1')}
+                  >
+                    <LayoutDashboard size={16} strokeWidth={1.8} className="shrink-0" />
+                    Inicio
+                  </NavLink>
+                  <NavLink
+                    to="/inbox"
+                    title="Bandeja de entrada"
+                    onClick={() => setMobileOpen(false)}
+                    className={cn(
+                      'py-2 px-2 rounded-lg transition-all duration-150 shrink-0',
+                      isActive('/inbox')
+                        ? 'bg-accent text-foreground'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-accent/50',
+                    )}
+                  >
+                    <Inbox size={16} strokeWidth={1.8} />
+                  </NavLink>
+                </div>
                 <NavLink
-                  to="/"
+                  to="/agente"
                   onClick={() => setMobileOpen(false)}
-                  className={cn(navItemClass(isActive('/')), 'flex-1')}
+                  className={navItemClass(isActive('/agente'))}
                 >
-                  <LayoutDashboard size={16} strokeWidth={1.8} className="shrink-0" />
-                  Inicio
+                  <MessageCircle size={16} strokeWidth={1.8} className="shrink-0" />
+                  Asistente
                 </NavLink>
-                <NavLink
-                  to="/inbox"
-                  title="Bandeja de entrada"
-                  onClick={() => setMobileOpen(false)}
-                  className={cn(
-                    'py-2 px-2 rounded-lg transition-all duration-150 shrink-0',
-                    isActive('/inbox')
-                      ? 'bg-accent text-foreground'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-accent/50',
-                  )}
-                >
-                  <Inbox size={16} strokeWidth={1.8} />
-                </NavLink>
-              </div>
+              </>
             )}
 
             {/* Empresas header */}
