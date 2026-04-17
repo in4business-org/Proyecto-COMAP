@@ -1,9 +1,11 @@
-const { createClient } = require('@supabase/supabase-js');
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+const { CognitoJwtVerifier } = require('aws-jwt-verify');
 
-// Cache token → user para evitar una llamada de red a Supabase en cada request.
-// TTL de 55 segundos (tokens de Supabase duran 1 hora).
-// Máximo 500 entradas para no crecer ilimitado.
+const verifier = CognitoJwtVerifier.create({
+  userPoolId: process.env.COGNITO_USER_POOL_ID,
+  tokenUse: 'id',
+  clientId: process.env.COGNITO_CLIENT_ID,
+});
+
 const TOKEN_CACHE = new Map();
 const TOKEN_TTL = 55 * 1000;
 const TOKEN_CACHE_MAX = 500;
@@ -20,7 +22,6 @@ function getCachedUser(token) {
 
 function setCachedUser(token, user) {
   if (TOKEN_CACHE.size >= TOKEN_CACHE_MAX) {
-    // Evict the oldest entry
     TOKEN_CACHE.delete(TOKEN_CACHE.keys().next().value);
   }
   TOKEN_CACHE.set(token, { user, expiresAt: Date.now() + TOKEN_TTL });
@@ -39,28 +40,28 @@ const requireAuth = async (req, res, next) => {
 
     const token = authHeader.split(' ')[1];
 
-    // Check cache first — avoid a network call if we already validated this token recently
     const cached = getCachedUser(token);
     if (cached) {
       req.user = cached;
       return next();
     }
 
-    // Cache miss: validate with Supabase (network call)
     const authStart = performance.now();
-    const { data: { user }, error } = await supabase.auth.getUser(token);
-    console.log(`  [AUTH] getUser -> ${(performance.now() - authStart).toFixed(0)}ms (cache miss)`);
+    const payload = await verifier.verify(token);
+    console.log(`  [AUTH] verify -> ${(performance.now() - authStart).toFixed(0)}ms (cache miss)`);
 
-    if (error || !user) {
-      return res.status(401).json({ error: 'Acceso denegado: Token inválido o expirado' });
-    }
+    const user = {
+      id: payload.sub,
+      email: payload.email,
+      email_verified: payload.email_verified,
+    };
 
     setCachedUser(token, user);
     req.user = user;
     next();
   } catch (error) {
-    console.error('Error de autenticación:', error);
-    res.status(500).json({ error: 'Error interno en middleware de validación' });
+    console.error('Error de autenticación:', error.message);
+    return res.status(401).json({ error: 'Acceso denegado: Token inválido o expirado' });
   }
 };
 

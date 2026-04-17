@@ -1,31 +1,62 @@
 import React, { useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { signInWithPassword, completeNewPassword, notifyAuthChange } from '../lib/cognito';
 import { useNavigate } from 'react-router-dom';
 import { Lock, Mail, AlertCircle } from 'lucide-react';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [pendingUser, setPendingUser] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+
+  const translateError = (err) => {
+    const msg = err?.message || '';
+    if (msg.includes('Incorrect username or password') || msg.includes('User does not exist')) {
+      return 'Correo o contraseña incorrectos';
+    }
+    if (msg.includes('User is not confirmed')) {
+      return 'Usuario no confirmado. Contactá al administrador.';
+    }
+    return msg || 'Error de autenticación';
+  };
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (error) {
-      setError(error.message === 'Invalid login credentials' ? 'Correo o contraseña incorrectos' : error.message);
-    } else {
+    try {
+      const { session } = await signInWithPassword(email, password);
+      notifyAuthChange(session);
       navigate('/');
+    } catch (err) {
+      if (err?.code === 'NewPasswordRequired') {
+        setPendingUser(err.cognitoUser);
+        setError(null);
+      } else {
+        setError(translateError(err));
+      }
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
+  };
+
+  const handleNewPassword = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      const { session } = await completeNewPassword(pendingUser, newPassword);
+      notifyAuthChange(session);
+      navigate('/');
+    } catch (err) {
+      setError(translateError(err));
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -53,57 +84,87 @@ export default function Login() {
             </div>
           )}
 
-          <form onSubmit={handleLogin} className="space-y-6">
-            <div>
-              <label htmlFor="login-email" className="block text-sm font-medium text-indigo-100 mb-2">Correo Electrónico</label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <Mail className="h-5 w-5 text-indigo-300" aria-hidden="true" />
+          {pendingUser ? (
+            <form onSubmit={handleNewPassword} className="space-y-6">
+              <p className="text-sm text-indigo-200">Primera vez que ingresás. Definí una nueva contraseña:</p>
+              <div>
+                <label htmlFor="new-password" className="block text-sm font-medium text-indigo-100 mb-2">Nueva contraseña</label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                    <Lock className="h-5 w-5 text-indigo-300" aria-hidden="true" />
+                  </div>
+                  <input
+                    id="new-password"
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="block w-full pl-12 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-indigo-300/50 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-all"
+                    placeholder="••••••••"
+                    required
+                  />
                 </div>
-                <input
-                  id="login-email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  aria-describedby={error ? 'login-error' : undefined}
-                  className="block w-full pl-12 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-indigo-300/50 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-all"
-                  placeholder="admin@empresa.com"
-                  required
-                />
               </div>
-            </div>
-
-            <div>
-              <label htmlFor="login-password" className="block text-sm font-medium text-indigo-100 mb-2">Contraseña</label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <Lock className="h-5 w-5 text-indigo-300" aria-hidden="true" />
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full flex justify-center py-3.5 px-4 border border-transparent rounded-xl shadow-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all mt-4"
+              >
+                {loading ? <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div> : 'Confirmar nueva contraseña'}
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={handleLogin} className="space-y-6">
+              <div>
+                <label htmlFor="login-email" className="block text-sm font-medium text-indigo-100 mb-2">Correo Electrónico</label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                    <Mail className="h-5 w-5 text-indigo-300" aria-hidden="true" />
+                  </div>
+                  <input
+                    id="login-email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    aria-describedby={error ? 'login-error' : undefined}
+                    className="block w-full pl-12 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-indigo-300/50 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-all"
+                    placeholder="admin@empresa.com"
+                    required
+                  />
                 </div>
-                <input
-                  id="login-password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  aria-describedby={error ? 'login-error' : undefined}
-                  className="block w-full pl-12 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-indigo-300/50 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-all"
-                  placeholder="••••••••"
-                  required
-                />
               </div>
-            </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full flex justify-center py-3.5 px-4 border border-transparent rounded-xl shadow-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all mt-4"
-            >
-              {loading ? (
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-              ) : (
-                'Iniciar Sesión'
-              )}
-            </button>
-          </form>
+              <div>
+                <label htmlFor="login-password" className="block text-sm font-medium text-indigo-100 mb-2">Contraseña</label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                    <Lock className="h-5 w-5 text-indigo-300" aria-hidden="true" />
+                  </div>
+                  <input
+                    id="login-password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    aria-describedby={error ? 'login-error' : undefined}
+                    className="block w-full pl-12 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-indigo-300/50 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-all"
+                    placeholder="••••••••"
+                    required
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full flex justify-center py-3.5 px-4 border border-transparent rounded-xl shadow-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all mt-4"
+              >
+                {loading ? (
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                ) : (
+                  'Iniciar Sesión'
+                )}
+              </button>
+            </form>
+          )}
         </div>
       </div>
     </div>

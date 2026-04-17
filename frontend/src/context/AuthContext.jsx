@@ -1,5 +1,5 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
-import { supabase } from '../lib/supabase';
+import { getCurrentSession, onAuthStateChange, signOut as cognitoSignOut } from '../lib/cognito';
 
 const AuthContext = createContext({});
 
@@ -9,27 +9,32 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Verificar si hay una sesión guardada nada más arrancar la página
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
+    getCurrentSession().then((sess) => {
+      setSession(sess);
+      setUser(sess?.user ?? null);
       setLoading(false);
     });
 
-    // Escuchar cambios: Si alguien hace login/logout, esto se dispara automático
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
+    const { unsubscribe } = onAuthStateChange((_event, sess) => {
+      setSession(sess);
+      setUser(sess?.user ?? null);
       setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    return () => unsubscribe();
   }, []);
+
+  const signOut = () => {
+    cognitoSignOut();
+    setSession(null);
+    setUser(null);
+  };
 
   const value = {
     session,
     user,
-    loading
+    loading,
+    signOut,
   };
 
   return (

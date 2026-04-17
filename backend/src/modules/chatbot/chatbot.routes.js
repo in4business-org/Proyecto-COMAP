@@ -1,7 +1,7 @@
 const { Router } = require('express');
 const multer = require('multer');
 const chatbotService = require('./chatbot.service');
-const supabaseService = require('../../config/supabase.config');
+const supabaseService = require('../../config/s3.config');
 
 const prisma = require('../../config/prisma');
 

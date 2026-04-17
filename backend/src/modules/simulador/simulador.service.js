@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const ExcelJS = require('exceljs');
 const { TEMPLATE_SIMULADOR } = require('../../config/storage.config');
-const supabaseService = require('../../config/supabase.config');
+const supabaseService = require('../../config/s3.config');
 
 class SimuladorService {
   async getSimuladorBuffer(empresaId, proyectoId) {

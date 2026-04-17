@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { getCurrentSession, onAuthStateChange } from './cognito';
 
 const BASE = import.meta.env.VITE_API_URL || '/api';
 
@@ -8,16 +8,14 @@ let _tokenExpiresAt = 0;
 
 async function getToken() {
   const now = Date.now();
-  // Reuse token if it expires in more than 60 seconds
   if (_cachedToken && _tokenExpiresAt - now > 60_000) return _cachedToken;
-  const { data: { session } } = await supabase.auth.getSession();
+  const session = await getCurrentSession();
   _cachedToken = session?.access_token || null;
   _tokenExpiresAt = session?.expires_at ? session.expires_at * 1000 : 0;
   return _cachedToken;
 }
 
-// Invalidate cache on auth state changes (login/logout/refresh)
-supabase.auth.onAuthStateChange((_event, session) => {
+onAuthStateChange((_event, session) => {
   _cachedToken = session?.access_token || null;
   _tokenExpiresAt = session?.expires_at ? session.expires_at * 1000 : 0;
 });

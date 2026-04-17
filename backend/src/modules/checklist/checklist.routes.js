@@ -3,7 +3,7 @@ const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
 const checklistService = require('./checklist.service');
-const supabaseService = require('../../config/supabase.config');
+const supabaseService = require('../../config/s3.config');
 
 const upload = multer({ storage: multer.memoryStorage() });
 const router = Router({ mergeParams: true });
