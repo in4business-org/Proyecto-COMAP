@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { getIdToken, Hub } from './cognito';
 
 const BASE = import.meta.env.VITE_API_URL || '/api';
 
@@ -10,16 +10,19 @@ async function getToken() {
   const now = Date.now();
   // Reuse token if it expires in more than 60 seconds
   if (_cachedToken && _tokenExpiresAt - now > 60_000) return _cachedToken;
-  const { data: { session } } = await supabase.auth.getSession();
-  _cachedToken = session?.access_token || null;
-  _tokenExpiresAt = session?.expires_at ? session.expires_at * 1000 : 0;
+  // Amplify refresca el token automáticamente si está por expirar
+  const { token, expiresAt } = await getIdToken();
+  _cachedToken = token;
+  _tokenExpiresAt = expiresAt;
   return _cachedToken;
 }
 
 // Invalidate cache on auth state changes (login/logout/refresh)
-supabase.auth.onAuthStateChange((_event, session) => {
-  _cachedToken = session?.access_token || null;
-  _tokenExpiresAt = session?.expires_at ? session.expires_at * 1000 : 0;
+Hub.listen('auth', ({ payload }) => {
+  if (['signedIn', 'signedOut', 'tokenRefresh'].includes(payload.event)) {
+    _cachedToken = null;
+    _tokenExpiresAt = 0;
+  }
 });
 
 async function request(url, options = {}) {

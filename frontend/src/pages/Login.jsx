@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { signIn, confirmSignIn } from '../lib/cognito';
 import { useNavigate } from 'react-router-dom';
 import { Lock, Mail, AlertCircle } from 'lucide-react';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [needsNewPassword, setNeedsNewPassword] = useState(false);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -15,15 +17,30 @@ export default function Login() {
     setLoading(true);
     setError(null);
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      if (needsNewPassword) {
+        // El usuario fue creado por un admin y debe fijar una contraseña permanente
+        const { isSignedIn } = await confirmSignIn({ challengeResponse: newPassword });
+        if (isSignedIn) navigate('/');
+        setLoading(false);
+        return;
+      }
 
-    if (error) {
-      setError(error.message === 'Invalid login credentials' ? 'Correo o contraseña incorrectos' : error.message);
-    } else {
-      navigate('/');
+      const { isSignedIn, nextStep } = await signIn({ username: email, password });
+
+      if (isSignedIn) {
+        navigate('/');
+      } else if (nextStep?.signInStep === 'CONFIRM_SIGN_IN_WITH_NEW_PASSWORD_REQUIRED') {
+        setNeedsNewPassword(true);
+        setError('Debés definir una nueva contraseña para tu cuenta.');
+      } else {
+        setError('No se pudo iniciar sesión. Verificá tu cuenta.');
+      }
+    } catch (err) {
+      const msg = err?.name === 'NotAuthorizedException' || err?.name === 'UserNotFoundException'
+        ? 'Correo o contraseña incorrectos'
+        : (err?.message || 'Error al iniciar sesión');
+      setError(msg);
     }
     setLoading(false);
   };
@@ -92,6 +109,26 @@ export default function Login() {
               </div>
             </div>
 
+            {needsNewPassword && (
+              <div>
+                <label htmlFor="login-new-password" className="block text-sm font-medium text-indigo-100 mb-2">Nueva Contraseña</label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                    <Lock className="h-5 w-5 text-indigo-300" aria-hidden="true" />
+                  </div>
+                  <input
+                    id="login-new-password"
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="block w-full pl-12 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-indigo-300/50 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-all"
+                    placeholder="••••••••"
+                    required
+                  />
+                </div>
+              </div>
+            )}
+
             <button
               type="submit"
               disabled={loading}
@@ -100,7 +137,7 @@ export default function Login() {
               {loading ? (
                 <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
               ) : (
-                'Iniciar Sesión'
+                needsNewPassword ? 'Guardar contraseña' : 'Iniciar Sesión'
               )}
             </button>
           </form>

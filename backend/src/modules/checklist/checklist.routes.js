@@ -3,7 +3,7 @@ const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
 const checklistService = require('./checklist.service');
-const supabaseService = require('../../config/supabase.config');
+const storageService = require('../../config/s3.config');
 
 const upload = multer({ storage: multer.memoryStorage() });
 const router = Router({ mergeParams: true });
@@ -43,7 +43,7 @@ router.post('/:itemId/archivo', upload.single('file'), async (req, res) => {
     const folderPath = `proyectos/${empresaId}/${proyectoId}/checklist/${seccion}/${nombreCarpeta}`;
     const filePath = `${folderPath}/${req.file.originalname}`;
     
-    await supabaseService.uploadFile(filePath, req.file.buffer, req.file.mimetype);
+    await storageService.uploadFile(filePath, req.file.buffer, req.file.mimetype);
     await checklistService.guardarArchivo(empresaId, proyectoId, itemId, filePath);
     res.json({ ok: true, archivo: filePath });
   } catch(e) {
@@ -58,7 +58,7 @@ router.get('/:itemId/archivo', async (req, res) => {
     const filePath = await checklistService.getArchivoPath(empresaId, proyectoId, itemId);
     if (!filePath) return res.status(404).json({ error: 'Archivo no encontrado' });
     
-    const buffer = await supabaseService.downloadFile(filePath);
+    const buffer = await storageService.downloadFile(filePath);
     const filename = filePath.split('/').pop();
     res.set({
       'Content-Type': 'application/octet-stream',

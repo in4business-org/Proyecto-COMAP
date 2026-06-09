@@ -2,13 +2,13 @@ const fs = require('fs');
 const path = require('path');
 const ExcelJS = require('exceljs');
 const { TEMPLATE_SIMULADOR } = require('../../config/storage.config');
-const supabaseService = require('../../config/supabase.config');
+const storageService = require('../../config/s3.config');
 
 class SimuladorService {
   async getSimuladorBuffer(empresaId, proyectoId) {
     const filePath = `proyectos/${empresaId}/${proyectoId}/simulador/0_Simulador.xlsx`;
     try {
-        const buffer = await supabaseService.downloadFile(filePath);
+        const buffer = await storageService.downloadFile(filePath);
         return buffer;
     } catch {
         if (!fs.existsSync(TEMPLATE_SIMULADOR)) return null;
@@ -18,7 +18,7 @@ class SimuladorService {
 
   async subirSimulador(empresaId, proyectoId, fileBuffer) {
     const filePath = `proyectos/${empresaId}/${proyectoId}/simulador/0_Simulador_completado.xlsx`;
-    await supabaseService.uploadFile(filePath, fileBuffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    await storageService.uploadFile(filePath, fileBuffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(fileBuffer);
@@ -37,19 +37,19 @@ class SimuladorService {
     const metaPath = `proyectos/${empresaId}/${proyectoId}/metadata.json`;
     let meta = {};
     try {
-        const metaBuf = await supabaseService.downloadFile(metaPath);
+        const metaBuf = await storageService.downloadFile(metaPath);
         meta = JSON.parse(metaBuf.toString('utf-8'));
     } catch {}
 
     meta.simulador = resultados;
-    await supabaseService.uploadFile(metaPath, Buffer.from(JSON.stringify(meta, null, 2)), 'application/json');
+    await storageService.uploadFile(metaPath, Buffer.from(JSON.stringify(meta, null, 2)), 'application/json');
     return resultados;
   }
 
   async getResultados(empresaId, proyectoId) {
     const metaPath = `proyectos/${empresaId}/${proyectoId}/metadata.json`;
     try {
-        const metaBuf = await supabaseService.downloadFile(metaPath);
+        const metaBuf = await storageService.downloadFile(metaPath);
         const meta = JSON.parse(metaBuf.toString('utf-8'));
         return meta.simulador || {};
     } catch {

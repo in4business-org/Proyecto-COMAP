@@ -109,8 +109,8 @@ export function Sidebar() {
     return location.pathname.startsWith(href)
   }
 
-  const displayName = user?.user_metadata?.full_name
-    || user?.user_metadata?.name
+  const displayName = user?.name
+    || user?.['cognito:username']
     || user?.email?.split('@')[0]
     || ''
 

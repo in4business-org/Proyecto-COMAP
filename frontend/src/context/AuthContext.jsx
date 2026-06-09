@@ -1,5 +1,5 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
-import { supabase } from '../lib/supabase';
+import { getIdToken, signOut as cognitoSignOut, Hub } from '../lib/cognito';
 
 const AuthContext = createContext({});
 
@@ -8,28 +8,53 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  const refresh = async () => {
+    const { token, payload } = await getIdToken();
+    if (token) {
+      setSession({ token });
+      setUser(payload); // claims del ID token: { sub, email, name, ... }
+    } else {
+      setSession(null);
+      setUser(null);
+    }
+    setLoading(false);
+  };
+
   useEffect(() => {
-    // Verificar si hay una sesión guardada nada más arrancar la página
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
+    // Estado inicial al cargar la página
+    refresh();
+
+    // Escuchar eventos de auth (login / logout / refresh de token)
+    const unsubscribe = Hub.listen('auth', ({ payload }) => {
+      switch (payload.event) {
+        case 'signedIn':
+        case 'tokenRefresh':
+          refresh();
+          break;
+        case 'signedOut':
+          setSession(null);
+          setUser(null);
+          setLoading(false);
+          break;
+        default:
+          break;
+      }
     });
 
-    // Escuchar cambios: Si alguien hace login/logout, esto se dispara automático
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
+    return () => unsubscribe();
   }, []);
+
+  const logout = async () => {
+    await cognitoSignOut();
+    setSession(null);
+    setUser(null);
+  };
 
   const value = {
     session,
     user,
-    loading
+    loading,
+    logout,
   };
 
   return (

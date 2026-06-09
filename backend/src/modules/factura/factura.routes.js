@@ -7,7 +7,7 @@ const facturaService = require('./factura.service');
 const excelService = require('./excel.service');
 const proyectoService = require('../proyecto/proyecto.service');
 const empresaService = require('../empresa/empresa.service');
-const supabaseService = require('../../config/supabase.config');
+const storageService = require('../../config/s3.config');
 const prisma = require('../../config/prisma');
 const cotizacionService = require('../cotizacion/cotizacion.service');
 const { formatearFecha, normalizarFecha } = require('../../common/utils/normalize');
@@ -104,7 +104,7 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/upload', upload
     const supported = (req.files || []).filter(f => isSupported(f.originalname));
     const subidos = await Promise.all(
       supported.map(f =>
-        supabaseService.uploadFile(`${folderPath}/${f.originalname}`, f.buffer, f.mimetype)
+        storageService.uploadFile(`${folderPath}/${f.originalname}`, f.buffer, f.mimetype)
           .then(() => f.originalname)
       )
     );
@@ -124,7 +124,7 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/subir-y-procesa
     const supported = (req.files || []).filter(f => isSupported(f.originalname));
     await Promise.all(
       supported.map(f =>
-        supabaseService.uploadFile(`${folderPath}/${f.originalname}`, f.buffer, f.mimetype)
+        storageService.uploadFile(`${folderPath}/${f.originalname}`, f.buffer, f.mimetype)
       )
     );
     const archivosData = supported.map(f => ({
@@ -186,7 +186,7 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/reprocesar', as
     const folderPath = `proyectos/${empresaId}/${proyectoId}/${periodo}`;
     const downloadResults = await Promise.allSettled(
       archivos.map(filename =>
-        supabaseService.downloadFile(`${folderPath}/${filename}`)
+        storageService.downloadFile(`${folderPath}/${filename}`)
           .then(buffer => ({ buffer, mimeType: getMimeType(filename), filename }))
       )
     );
@@ -265,14 +265,14 @@ router.get('/empresas/:empresaId/proyectos/:proyectoId/:periodo/analizar', async
     const { empresaId, proyectoId, periodo } = req.params;
     const folderPath = `proyectos/${empresaId}/${proyectoId}/${periodo}`;
 
-    const fileList = await supabaseService.listFiles(folderPath);
+    const fileList = await storageService.listFiles(folderPath);
     if (!fileList || !fileList.length) return res.json(await leerResultadosDB(proyectoId, periodo));
 
     const archivosData = await Promise.all(
       fileList
         .filter(f => isSupported(f.name))
         .map(f =>
-          supabaseService.downloadFile(`${folderPath}/${f.name}`)
+          storageService.downloadFile(`${folderPath}/${f.name}`)
             .then(buffer => ({ buffer, mimeType: getMimeType(f.name), filename: f.name }))
         )
     );
@@ -301,12 +301,12 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/excel', async (
     let resultados = await leerResultadosDB(proyectoId, periodo);
     if (!resultados || !resultados.length) {
       const folderPath = `proyectos/${empresaId}/${proyectoId}/${periodo}`;
-      const fileList = await supabaseService.listFiles(folderPath);
+      const fileList = await storageService.listFiles(folderPath);
       const archivosData = await Promise.all(
         (fileList || [])
           .filter(f => isSupported(f.name))
           .map(f =>
-            supabaseService.downloadFile(`${folderPath}/${f.name}`)
+            storageService.downloadFile(`${folderPath}/${f.name}`)
               .then(buffer => ({ buffer, mimeType: getMimeType(f.name), filename: f.name }))
           )
       );
@@ -498,7 +498,7 @@ router.post('/simple/upload', upload.array('files'), async (req, res) => {
     const supported = (req.files || []).filter(f => isSupported(f.originalname));
     const subidos = await Promise.all(
       supported.map(f =>
-        supabaseService.uploadFile(`simple_uploads/${f.originalname}`, f.buffer, f.mimetype)
+        storageService.uploadFile(`simple_uploads/${f.originalname}`, f.buffer, f.mimetype)
           .then(() => f.originalname)
       )
     );
@@ -510,7 +510,7 @@ router.post('/simple/upload', upload.array('files'), async (req, res) => {
 
 router.get('/simple/resultados', async (_req, res) => {
   try {
-    const buffer = await supabaseService.downloadFile(SIMPLE_RESULTS_KEY);
+    const buffer = await storageService.downloadFile(SIMPLE_RESULTS_KEY);
     return res.json(JSON.parse(buffer.toString('utf-8')));
   } catch {
     res.json([]);
@@ -519,18 +519,18 @@ router.get('/simple/resultados', async (_req, res) => {
 
 router.get('/simple/analizar', async (_req, res) => {
   try {
-    const fileList = await supabaseService.listFiles('simple_uploads');
+    const fileList = await storageService.listFiles('simple_uploads');
     const archivosData = await Promise.all(
       (fileList || [])
         .filter(f => f.name !== '_resultados.json' && isSupported(f.name))
         .map(f =>
-          supabaseService.downloadFile(`simple_uploads/${f.name}`)
+          storageService.downloadFile(`simple_uploads/${f.name}`)
             .then(buffer => ({ buffer, mimeType: getMimeType(f.name), filename: f.name }))
         )
     );
 
     const resultados = await facturaService.analizarMultipleArchivos(archivosData);
-    await supabaseService.uploadFile(SIMPLE_RESULTS_KEY, Buffer.from(JSON.stringify(resultados, null, 2)), 'application/json');
+    await storageService.uploadFile(SIMPLE_RESULTS_KEY, Buffer.from(JSON.stringify(resultados, null, 2)), 'application/json');
     res.json(resultados);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -541,18 +541,18 @@ router.get('/simple/excel', async (_req, res) => {
   try {
     let resultados = [];
     try {
-      const buffer = await supabaseService.downloadFile(SIMPLE_RESULTS_KEY);
+      const buffer = await storageService.downloadFile(SIMPLE_RESULTS_KEY);
       resultados = JSON.parse(buffer.toString('utf-8'));
     } catch { }
 
     if (!resultados.length) {
       // fallback inline analyze
-      const fileList = await supabaseService.listFiles('simple_uploads');
+      const fileList = await storageService.listFiles('simple_uploads');
       const archivosData = await Promise.all(
         (fileList || [])
           .filter(f => f.name !== '_resultados.json' && isSupported(f.name))
           .map(f =>
-            supabaseService.downloadFile(`simple_uploads/${f.name}`)
+            storageService.downloadFile(`simple_uploads/${f.name}`)
               .then(buffer => ({ buffer, mimeType: getMimeType(f.name), filename: f.name }))
           )
       );
@@ -580,7 +580,7 @@ router.post('/simple/asociar', async (req, res) => {
 
     let resultadosSimples = [];
     try {
-      const buffer = await supabaseService.downloadFile(SIMPLE_RESULTS_KEY);
+      const buffer = await storageService.downloadFile(SIMPLE_RESULTS_KEY);
       resultadosSimples = JSON.parse(buffer.toString('utf-8'));
     } catch { }
 
@@ -593,9 +593,9 @@ router.post('/simple/asociar', async (req, res) => {
       resultadosSimples
         .filter(r => r.archivo)
         .map(r =>
-          supabaseService.downloadFile(`simple_uploads/${r.archivo}`)
+          storageService.downloadFile(`simple_uploads/${r.archivo}`)
             .then(srcBuf =>
-              supabaseService.uploadFile(`${folderPath}/${r.archivo}`, srcBuf, getMimeType(r.archivo))
+              storageService.uploadFile(`${folderPath}/${r.archivo}`, srcBuf, getMimeType(r.archivo))
             )
         )
     );
@@ -618,7 +618,7 @@ router.post('/simple/asociar', async (req, res) => {
     const combinedResults = Array.from(destinoMap.values());
     await guardarResultadosDB(proyectoId, periodo, combinedResults);
 
-    try { await supabaseService.deleteFile(SIMPLE_RESULTS_KEY); } catch (e) { }
+    try { await storageService.deleteFile(SIMPLE_RESULTS_KEY); } catch (e) { }
 
     res.json({ success: true, asociados: resultadosSimples.length, archivos_copiados: copiados });
   } catch (e) {
