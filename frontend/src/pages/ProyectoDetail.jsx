@@ -1239,6 +1239,7 @@ function ChecklistTab({ empresaId, proyectoId, onCountUpdate }) {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [uploadingId, setUploadingId] = useState(null)
+  const [downloadingId, setDownloadingId] = useState(null)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -1280,6 +1281,21 @@ function ChecklistTab({ empresaId, proyectoId, onCountUpdate }) {
     }
   }
 
+  const handleFileDownload = async (item) => {
+    setDownloadingId(item.id)
+    try {
+      const blob = await checkApi.downloadFile(empresaId, proyectoId, item.id)
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = item.archivo.split('/').pop()
+      a.click()
+    } catch (error) {
+      console.error(error)
+    } finally {
+      setDownloadingId(null)
+    }
+  }
+
   const [naOpen, setNaOpen] = useState(false)
 
   if (loading) return <LoadingState message="Cargando checklist..." />
@@ -1316,7 +1332,11 @@ function ChecklistTab({ empresaId, proyectoId, onCountUpdate }) {
             {item.archivo && (
               <div className="text-[10px] text-success mt-1 flex items-center gap-1 font-medium">
                 📎 {item.archivo}
-                <a href={`/api/empresas/${empresaId}/proyectos/${proyectoId}/checklist/${item.id}/archivo`} target="_blank" rel="noreferrer" className="text-primary hover:underline ml-1">Descargar</a>
+                <button
+                  onClick={() => handleFileDownload(item)}
+                  disabled={downloadingId === item.id}
+                  className="text-primary hover:underline ml-1 disabled:opacity-60 disabled:no-underline"
+                >{downloadingId === item.id ? 'Descargando...' : 'Descargar'}</button>
               </div>
             )}
           </div>
