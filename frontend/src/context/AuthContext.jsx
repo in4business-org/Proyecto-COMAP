@@ -58,10 +58,17 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const logout = async () => {
-    await cognitoSignOut();
-    setSession(null);
-    setUser(null);
-    setAccesos([]);
+    try {
+      await cognitoSignOut();
+    } catch (err) {
+      // Si Cognito falla (sin red, token ya vencido) igual limpiamos la sesion
+      // local: el usuario pidio salir, no puede quedarse adentro por un error.
+      console.error('Error cerrando sesion en Cognito:', err);
+    } finally {
+      setSession(null);
+      setUser(null);
+      setAccesos([]);
+    }
   };
 
   // El rol sale del claim `cognito:groups` del ID token. Es sólo para decidir

@@ -14,6 +14,7 @@ import {
   PanelLeftOpen,
   Inbox,
   ShieldCheck,
+  LogOut,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { empresas as empApi, proyectos as projApi } from '@/lib/api'
@@ -46,7 +47,7 @@ export function Sidebar() {
   const location = useLocation()
   const navigate = useNavigate()
   const { theme, toggleTheme } = useTheme()
-  const { user, isAdmin, isMaster } = useAuth()
+  const { user, isAdmin, isMaster, logout } = useAuth()
 
   const [empresas, setEmpresas] = useState([])
   const [proyectosMap, setProyectosMap] = useState({})
@@ -79,6 +80,16 @@ export function Sidebar() {
       }
     }
   }, [location.pathname, proyectosMap])
+
+  const handleLogout = async () => {
+    try {
+      await logout()
+    } finally {
+      // ProtectedRoute ya redirige al quedarse sin sesion, pero navegamos
+      // explicitamente para que no quede una pantalla intermedia en blanco.
+      navigate('/login', { replace: true })
+    }
+  }
 
   const toggleCollapsed = () => {
     setCollapsed(prev => {
@@ -404,13 +415,23 @@ export function Sidebar() {
                 {displayName}
               </span>
             )}
-            <button
-              onClick={toggleTheme}
-              aria-label={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
-              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer shrink-0"
-            >
-              {theme === 'dark' ? <Sun size={14} aria-hidden="true" /> : <Moon size={14} aria-hidden="true" />}
-            </button>
+            <div className={cn('flex items-center shrink-0', collapsed ? 'flex-col gap-1' : 'gap-0.5')}>
+              <button
+                onClick={toggleTheme}
+                aria-label={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+                className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer shrink-0"
+              >
+                {theme === 'dark' ? <Sun size={14} aria-hidden="true" /> : <Moon size={14} aria-hidden="true" />}
+              </button>
+              <button
+                onClick={handleLogout}
+                title="Cerrar sesión"
+                aria-label="Cerrar sesión"
+                className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer shrink-0"
+              >
+                <LogOut size={14} aria-hidden="true" />
+              </button>
+            </div>
           </div>
         </div>
       </aside>
