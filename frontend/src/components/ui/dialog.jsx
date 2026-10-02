@@ -46,15 +46,22 @@ export function Dialog({ open, onClose, children }) {
 
   if (!open) return null
 
+  // El contenedor scrollea y el centrado se hace en un hijo con min-h-full.
+  // Centrar directamente sobre un `fixed inset-0` recorta el diálogo por arriba
+  // y por abajo cuando es más alto que la ventana, y como el body queda con
+  // overflow:hidden mientras está abierto, esa parte se vuelve inalcanzable.
+  // Con min-h-full el contenido corto sigue quedando centrado igual que antes,
+  // y el largo crece hacia abajo y se puede scrollear.
+  //
+  // El wrapper del centrado va con pointer-events-none para que los clics en el
+  // margen sigan llegando al overlay y cierren el diálogo, como hasta ahora.
   return (
-    <div
-      className="fixed inset-0 z-60 flex items-center justify-center"
-      role="dialog"
-      aria-modal="true"
-    >
+    <div className="fixed inset-0 z-60 overflow-y-auto" role="dialog" aria-modal="true">
       <div aria-hidden="true" className="fixed inset-0 bg-background" onClick={onClose} />
-      <div ref={contentRef} className="relative z-10 w-full max-w-lg mx-4 animate-scale-in">
-        {children}
+      <div className="relative z-10 flex min-h-full items-center justify-center p-4 pointer-events-none">
+        <div ref={contentRef} className="w-full max-w-lg animate-scale-in pointer-events-auto">
+          {children}
+        </div>
       </div>
     </div>
   )
