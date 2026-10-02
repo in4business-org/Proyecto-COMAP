@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const checklistService = require('./checklist.service');
 const storageService = require('../../config/s3.config');
+const { requireEscritura } = require('../../middleware/acceso.middleware');
 
 const upload = multer({ storage: multer.memoryStorage() });
 const router = Router({ mergeParams: true });
@@ -19,7 +20,7 @@ router.get('/', async (req, res) => {
 });
 
 // PATCH /api/empresas/:empresaId/proyectos/:proyectoId/checklist/:itemId
-router.patch('/:itemId', async (req, res) => {
+router.patch('/:itemId', requireEscritura('checklist'), async (req, res) => {
   try {
     const { empresaId, proyectoId, itemId } = req.params;
     const ok = await checklistService.actualizarItem(
@@ -34,7 +35,7 @@ router.patch('/:itemId', async (req, res) => {
 });
 
 // POST /api/empresas/:empresaId/proyectos/:proyectoId/checklist/:itemId/archivo
-router.post('/:itemId/archivo', upload.single('file'), async (req, res) => {
+router.post('/:itemId/archivo', requireEscritura('checklist'), upload.single('file'), async (req, res) => {
   try {
     const { empresaId, proyectoId, itemId } = req.params;
     const { seccion, nombreCarpeta } = checklistService.getUploadPath(

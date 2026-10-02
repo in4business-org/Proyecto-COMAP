@@ -1,10 +1,11 @@
 const { Router } = require('express');
 const proyectoService = require('./proyecto.service');
+const { requireEscritura } = require('../../middleware/acceso.middleware');
 
 const router = Router({ mergeParams: true });
 
 // POST /api/empresas/:empresaId/proyectos
-router.post('/', async (req, res) => {
+router.post('/', requireEscritura('proyectos'), async (req, res) => {
   try {
     const { empresaId } = req.params;
     const { anio_presentacion, duracion_seguimiento, fecha_presentacion } = req.body;
@@ -29,7 +30,7 @@ router.get('/', async (req, res) => {
 });
 
 // PATCH /api/empresas/:empresaId/proyectos/:proyectoId/expediente
-router.patch('/:proyectoId/expediente', async (req, res) => {
+router.patch('/:proyectoId/expediente', requireEscritura('proyectos'), async (req, res) => {
   try {
     const { empresaId, proyectoId } = req.params;
     const ok = await proyectoService.actualizarExpediente(empresaId, proyectoId, req.body.expediente);
@@ -41,7 +42,7 @@ router.patch('/:proyectoId/expediente', async (req, res) => {
 });
 
 // PATCH /api/empresas/:empresaId/proyectos/:proyectoId/metadata
-router.patch('/:proyectoId/metadata', async (req, res) => {
+router.patch('/:proyectoId/metadata', requireEscritura('proyectos'), async (req, res) => {
   try {
     const { empresaId, proyectoId } = req.params;
     const ok = await proyectoService.actualizarMetadata(empresaId, proyectoId, req.body);

@@ -1,5 +1,7 @@
 const { Router } = require('express');
 const empresaService = require('./empresa.service');
+const accesoService = require('../acceso/acceso.service');
+const { requireEscritura } = require('../../middleware/acceso.middleware');
 
 const router = Router();
 
@@ -16,9 +18,10 @@ router.post('/', async (req, res) => {
 });
 
 // GET /api/empresas
-router.get('/', async (_req, res) => {
+router.get('/', async (req, res) => {
   try {
-    res.json(await empresaService.listar());
+    const visibles = await accesoService.getEmpresasVisibles(req.user);
+    res.json(await empresaService.listar(visibles));
   } catch(e) {
     res.status(500).json({ error: e.message });
   }
@@ -36,7 +39,7 @@ router.get('/:empresaId', async (req, res) => {
 });
 
 // PUT /api/empresas/:empresaId
-router.put('/:empresaId', async (req, res) => {
+router.put('/:empresaId', requireEscritura('empresa'), async (req, res) => {
   try {
     const ok = await empresaService.actualizar(req.params.empresaId, req.body);
     if (!ok) return res.status(404).json({ error: 'Empresa no encontrada' });

@@ -8,6 +8,7 @@ import { LoadingState, Spinner } from '@/components/ui/loading'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { empresas as empApi, proyectos as projApi } from '@/lib/api'
+import { useAuth } from '../context/AuthContext'
 
 const FIELDS = [
   { key: 'razon_social', label: 'Razón Social', span: 1 },
@@ -24,6 +25,10 @@ const FIELDS = [
 
 export default function EmpresaDetail() {
   const { empresaId } = useParams()
+  // Permisos de escritura sobre esta empresa; el backend revalida igual
+  const { puedeEscribir } = useAuth()
+  const puedeEditarEmpresa = puedeEscribir(empresaId, 'empresa')
+  const puedeEditarProyectos = puedeEscribir(empresaId, 'proyectos')
   const [empresa, setEmpresa] = useState(null)
   const [form, setForm] = useState({})
   const [loading, setLoading] = useState(true)
@@ -109,10 +114,12 @@ export default function EmpresaDetail() {
             <p className="text-xs text-muted-foreground">{empresa?.rut}</p>
           </div>
         </div>
-        <Button onClick={() => setDialogOpen(true)} size="sm" className="gap-1.5 text-xs">
-          <Plus size={12} />
-          Nuevo proyecto
-        </Button>
+        {puedeEditarProyectos && (
+          <Button onClick={() => setDialogOpen(true)} size="sm" className="gap-1.5 text-xs">
+            <Plus size={12} />
+            Nuevo proyecto
+          </Button>
+        )}
       </div>
 
       {/* Tabs Menu */}
@@ -194,15 +201,17 @@ export default function EmpresaDetail() {
                         </td>
                         <td className="px-4 py-3 text-right">
                           <div className="flex items-center justify-end gap-1.5">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => handleOpenConfig(p)}
-                              className="h-[28px] px-2 text-[11px] text-muted-foreground hover:text-foreground gap-1"
-                            >
-                              <Settings size={12} />
-                              Configurar
-                            </Button>
+                            {puedeEditarProyectos && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleOpenConfig(p)}
+                                className="h-[28px] px-2 text-[11px] text-muted-foreground hover:text-foreground gap-1"
+                              >
+                                <Settings size={12} />
+                                Configurar
+                              </Button>
+                            )}
                             <Link to={`/empresas/${empresaId}/proyectos/${p.id}`}>
                               <Button size="sm" variant="secondary" className="h-[28px] px-3 text-[11px] font-medium gap-1 bg-background hover:bg-muted-foreground/10 text-foreground transition-all">
                                 Abrir <ArrowUpRight size={12} className="opacity-50" />
@@ -225,7 +234,7 @@ export default function EmpresaDetail() {
         <section className="bg-card/30 border border-border/50 rounded-xl p-5 md:p-6 animate-fade-in shadow-sm">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Datos de la empresa</h2>
-            {hasChanges && (
+            {hasChanges && puedeEditarEmpresa && (
               <Button onClick={handleSave} disabled={saving} size="sm" className="h-[28px] text-[11px] gap-1.5 font-medium">
                 {saving ? <Spinner size={12} /> : <Save size={12} />}
                 Guardar cambios

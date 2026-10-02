@@ -22,8 +22,31 @@ model Empresa {
   fecha_balance         String?
   tipo_contribuyente    String?
   proyectos             Proyecto[]
+  accesos               UsuarioEmpresa[]
   createdAt             DateTime   @default(now())
   updatedAt             DateTime   @updatedAt
+}
+
+// Permisos de un usuario sobre una empresa.
+//
+// La sola existencia de la fila otorga LECTURA. `escritura` lista los módulos
+// que además puede modificar ('empresa', 'proyectos', 'facturas', 'checklist',
+// 'simulador'); vacío = sólo lectura.
+//
+// Los administradores no tienen filas acá: acceden a todo por su rol.
+// `usuarioSub` es el `sub` de Cognito, que es estable y no cambia si el
+// usuario cambia de email.
+model UsuarioEmpresa {
+  id         String   @id @default(uuid())
+  usuarioSub String
+  empresaId  String
+  empresa    Empresa  @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  escritura  String[]
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([usuarioSub, empresaId])
+  @@index([usuarioSub])
 }
 
 model Proyecto {

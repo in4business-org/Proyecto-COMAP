@@ -2,6 +2,7 @@ const { Router } = require('express');
 const multer = require('multer');
 const fs = require('fs');
 const simuladorService = require('./simulador.service');
+const { requireEscritura } = require('../../middleware/acceso.middleware');
 
 const upload = multer({ storage: multer.memoryStorage() });
 const router = Router({ mergeParams: true });
@@ -23,7 +24,7 @@ router.get('/descargar', async (req, res) => {
 });
 
 // POST /api/empresas/:empresaId/proyectos/:proyectoId/simulador/subir
-router.post('/subir', upload.single('file'), async (req, res) => {
+router.post('/subir', requireEscritura('simulador'), upload.single('file'), async (req, res) => {
   try {
     const { empresaId, proyectoId } = req.params;
     const resultados = await simuladorService.subirSimulador(empresaId, proyectoId, req.file.buffer);

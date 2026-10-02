@@ -1,4 +1,5 @@
 const { CognitoJwtVerifier } = require('aws-jwt-verify');
+const { roleFromGroups, puedeAdministrar } = require('../config/cognito.config');
 
 // Verificador de tokens de Cognito. Valida firma (vía JWKS), expiración,
 // issuer y audiencia LOCALMENTE — sólo hace una llamada de red la primera vez
@@ -69,11 +70,14 @@ const requireAuth = async (req, res, next) => {
     console.log(`  [AUTH] verify -> ${(performance.now() - authStart).toFixed(0)}ms (cache miss)`);
 
     // Normalizamos a una forma parecida a la que entregaba Supabase
+    const groups = payload['cognito:groups'] || [];
     const user = {
       id: payload.sub,
       sub: payload.sub,
       email: payload.email,
       username: payload['cognito:username'] || payload.email,
+      groups,
+      role: roleFromGroups(groups),
       claims: payload,
     };
 
@@ -86,4 +90,40 @@ const requireAuth = async (req, res, next) => {
   }
 };
 
+/**
+ * Exige rol `master`: administración de toda la plataforma.
+ * Se monta SIEMPRE después de requireAuth.
+ *
+ * Ojo: el rol sale del claim `cognito:groups` del ID token, así que un cambio
+ * de rol recién se refleja cuando el token se renueva (~1h) o el usuario
+ * vuelve a iniciar sesión.
+ */
+const requireMaster = (req, res, next) => {
+  if (req.method === 'OPTIONS') return next();
+
+  if (req.user?.role !== 'master') {
+    return res.status(403).json({
+      error: 'Acceso denegado: esta acción es exclusiva de un administrador general',
+    });
+  }
+  next();
+};
+
+/**
+ * Exige acceso al panel de administración: `master` o `admin_empresa`.
+ * Que pueda entrar no significa que pueda tocar a cualquiera; el alcance de un
+ * admin de empresa se recorta después, empresa por empresa, en admin.service.
+ */
+const requirePanel = (req, res, next) => {
+  if (req.method === 'OPTIONS') return next();
+
+  if (!puedeAdministrar(req.user?.role)) {
+    return res.status(403).json({ error: 'Acceso denegado: se requieren permisos de administrador' });
+  }
+  next();
+};
+
 module.exports = requireAuth;
+module.exports.requireAuth = requireAuth;
+module.exports.requireMaster = requireMaster;
+module.exports.requirePanel = requirePanel;

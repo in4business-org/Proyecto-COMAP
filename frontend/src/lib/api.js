@@ -56,6 +56,46 @@ export const dashboard = {
   load: () => request('/dashboard'),
 };
 
+// -- Identidad y permisos del usuario actual
+export const me = {
+  load: () => request('/me'),
+};
+
+// -- Administración de usuarios (sólo rol admin; el backend valida con 403)
+export const admin = {
+  listUsuarios: () => request('/admin/usuarios'),
+  listModulos: () => request('/admin/modulos'),
+  getAccesos: (username) =>
+    request(`/admin/usuarios/${encodeURIComponent(username)}/accesos`),
+  setAccesos: (username, accesos) =>
+    request(`/admin/usuarios/${encodeURIComponent(username)}/accesos`, {
+      method: 'PUT',
+      body: JSON.stringify({ accesos }),
+    }),
+  getContexto: () => request('/admin/contexto'),
+  crearUsuario: ({ email, nombre, rol, enviarMail, accesos }) =>
+    request('/admin/usuarios', {
+      method: 'POST',
+      body: JSON.stringify({ email, nombre, rol, enviarMail, accesos }),
+    }),
+  cambiarRol: (username, rol) =>
+    request(`/admin/usuarios/${encodeURIComponent(username)}/rol`, {
+      method: 'PATCH',
+      body: JSON.stringify({ rol }),
+    }),
+  cambiarEstado: (username, habilitado) =>
+    request(`/admin/usuarios/${encodeURIComponent(username)}/estado`, {
+      method: 'PATCH',
+      body: JSON.stringify({ habilitado }),
+    }),
+  resetPassword: (username) =>
+    request(`/admin/usuarios/${encodeURIComponent(username)}/reset-password`, {
+      method: 'POST',
+    }),
+  eliminarUsuario: (username) =>
+    request(`/admin/usuarios/${encodeURIComponent(username)}`, { method: 'DELETE' }),
+};
+
 // -- Empresas
 export const empresas = {
   list: () => request('/empresas'),

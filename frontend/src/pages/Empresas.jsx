@@ -6,8 +6,11 @@ import { Input } from '@/components/ui/input'
 import { LoadingState, EmptyState } from '@/components/ui/loading'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { empresas as empApi } from '@/lib/api'
+import { useAuth } from '../context/AuthContext'
 
 export default function Empresas() {
+  // Dar de alta empresas es exclusivo de administradores (el backend tambien lo valida)
+  const { isMaster } = useAuth()
   const [empresas, setEmpresas] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -52,10 +55,12 @@ export default function Empresas() {
           <h1 className="text-xl font-medium">Empresas</h1>
           <p className="text-sm text-muted-foreground mt-0.5">{empresas.length} registradas</p>
         </div>
-        <Button onClick={() => setDialogOpen(true)} size="sm" className="gap-1.5">
-          <Plus size={14} />
-          Nueva
-        </Button>
+        {isMaster && (
+          <Button onClick={() => setDialogOpen(true)} size="sm" className="gap-1.5">
+            <Plus size={14} />
+            Nueva
+          </Button>
+        )}
       </div>
 
       {/* Search */}
@@ -79,8 +84,14 @@ export default function Empresas() {
         <EmptyState
           icon={Building2}
           title={search ? 'Sin resultados' : 'Sin empresas'}
-          description={search ? 'Proba con otro termino' : 'Registra una empresa para empezar'}
-          action={!search && (
+          description={
+            search
+              ? 'Proba con otro termino'
+              : isMaster
+                ? 'Registra una empresa para empezar'
+                : 'Todavia no te asignaron ninguna empresa. Pedile acceso a un administrador.'
+          }
+          action={!search && isMaster && (
             <Button onClick={() => setDialogOpen(true)} size="sm" variant="outline">
               <Plus size={14} /> Crear empresa
             </Button>

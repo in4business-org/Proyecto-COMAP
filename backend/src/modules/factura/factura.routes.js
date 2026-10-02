@@ -20,6 +20,13 @@ function toFechaDDMMYYYY(val) {
   return date ? formatearFecha(date) : null;
 }
 
+const {
+  requireEscritura,
+  proyectoPerteneceAEmpresa,
+} = require('../../middleware/acceso.middleware');
+const accesoService = require('../acceso/acceso.service');
+const { puedeEscribir } = require('../../common/constants/permisos');
+
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
 const router = Router({ mergeParams: true });
 const TMP_DIR = os.tmpdir();
@@ -97,7 +104,7 @@ async function leerResultadosDB(proyectoId, periodo) {
 // ── Project-scoped invoice endpoints ─────────────────────
 
 // POST  upload files
-router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/upload', upload.array('files'), async (req, res) => {
+router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/upload', requireEscritura('facturas'), upload.array('files'), async (req, res) => {
   try {
     const { empresaId, proyectoId, periodo } = req.params;
     const folderPath = `proyectos/${empresaId}/${proyectoId}/${periodo}`;
@@ -116,7 +123,7 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/upload', upload
 });
 
 // POST  upload + process files (appends to existing results)
-router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/subir-y-procesar', upload.array('files'), async (req, res) => {
+router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/subir-y-procesar', requireEscritura('facturas'), upload.array('files'), async (req, res) => {
   try {
     const { empresaId, proyectoId, periodo } = req.params;
     const folderPath = `proyectos/${empresaId}/${proyectoId}/${periodo}`;
@@ -174,7 +181,7 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/subir-y-procesa
 });
 
 // POST  reprocess specific files (returns new data without saving)
-router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/reprocesar', async (req, res) => {
+router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/reprocesar', requireEscritura('facturas'), async (req, res) => {
   try {
     const { empresaId, proyectoId, periodo } = req.params;
     const { archivos } = req.body;
@@ -241,7 +248,7 @@ router.get('/empresas/:empresaId/proyectos/:proyectoId/all-resultados', async (r
 });
 
 // PUT  update persisted results
-router.put('/empresas/:empresaId/proyectos/:proyectoId/:periodo', async (req, res) => {
+router.put('/empresas/:empresaId/proyectos/:proyectoId/:periodo', requireEscritura('facturas'), async (req, res) => {
   try {
     const { proyectoId, periodo } = req.params;
     const { results } = req.body;
@@ -266,7 +273,19 @@ router.get('/empresas/:empresaId/proyectos/:proyectoId/:periodo/analizar', async
     const folderPath = `proyectos/${empresaId}/${proyectoId}/${periodo}`;
 
     const fileList = await storageService.listFiles(folderPath);
+    // Sin archivos la ruta es una lectura pura: devuelve lo guardado y no toca nada.
     if (!fileList || !fileList.length) return res.json(await leerResultadosDB(proyectoId, periodo));
+
+    // A partir de aca REESCRIBE la tabla: guardarResultadosDB borra las filas
+    // del periodo y las recrea con el OCR nuevo, perdiendo las correcciones
+    // manuales. Como es un GET, requireEscritura lo exime, asi que el permiso
+    // se verifica a mano — y antes de descargar nada, para no hacer el trabajo
+    // caro y denegar despues.
+    if (!puedeEscribir(req.acceso, 'facturas')) {
+      return res.status(403).json({
+        error: 'Re-analizar reescribe las facturas del periodo: requiere permiso de escritura sobre "facturas"',
+      });
+    }
 
     const archivosData = await Promise.all(
       fileList
@@ -311,8 +330,20 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/excel', async (
           )
       );
       const parsedStats = await facturaService.analizarMultipleArchivos(archivosData);
-      await guardarResultadosDB(proyectoId, periodo, parsedStats);
-      resultados = await leerResultadosDB(proyectoId, periodo);
+      if (puedeEscribir(req.acceso, 'facturas')) {
+        await guardarResultadosDB(proyectoId, periodo, parsedStats);
+        resultados = await leerResultadosDB(proyectoId, periodo);
+      } else {
+        // Sin permiso de escritura no persistimos, pero el Excel se genera
+        // igual: normalizamos las fechas como lo haria guardarResultadosDB
+        // para que el archivo salga identico.
+        resultados = parsedStats.map((r) => ({
+          ...r,
+          fecha: toFechaDDMMYYYY(r.fecha) || null,
+          fecha_ejecucion:
+            toFechaDDMMYYYY(r.fecha_ejecucion) || toFechaDDMMYYYY(r.fecha) || null,
+        }));
+      }
     }
     if (!resultados.length) return res.status(404).json({ error: 'No hay facturas procesadas' });
 
@@ -323,7 +354,11 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/excel', async (
     const fechaBalance = empresaInfo?.fecha_balance || null;
 
     const timestamp = new Date().toISOString().replace(/[-:T]/g, '').substring(0, 15);
-    const nombre = `cuadro_inversiones_${empresaId}_${periodo}_${timestamp}.xlsx`;
+    // `periodo` y `empresaId` van a un nombre de archivo local y path.join
+    // normaliza los '..', asi que se escaparian de TMP_DIR. Para los valores
+    // reales ('presentacion', 'control_1', el id de empresa) esto no cambia nada.
+    const safe = (v) => String(v).replace(/[^A-Za-z0-9_-]/g, '');
+    const nombre = `cuadro_inversiones_${safe(empresaId)}_${safe(periodo)}_${timestamp}.xlsx`;
     const ruta = path.join(TMP_DIR, nombre);
 
     let cotizacion_usd = meta.cotizacion_usd;
@@ -392,7 +427,7 @@ router.get('/empresas/:empresaId/proyectos/:proyectoId/:periodo/template-importa
 });
 
 // POST  import facturas from Excel
-router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/importar', upload.single('file'), async (req, res) => {
+router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/importar', requireEscritura('facturas'), upload.single('file'), async (req, res) => {
   try {
     const { empresaId, proyectoId, periodo } = req.params;
     if (!req.file?.buffer) return res.status(400).json({ error: 'No se recibió archivo' });
@@ -453,7 +488,7 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/importar', uplo
 });
 
 // PATCH  update execution year of a single factura
-router.patch('/empresas/:empresaId/proyectos/:proyectoId/facturas/:facturaId/fecha-ejecucion', async (req, res) => {
+router.patch('/empresas/:empresaId/proyectos/:proyectoId/facturas/:facturaId/fecha-ejecucion', requireEscritura('facturas'), async (req, res) => {
   try {
     const { proyectoId, facturaId } = req.params;
     const { anio } = req.body;
@@ -491,14 +526,18 @@ router.patch('/empresas/:empresaId/proyectos/:proyectoId/facturas/:facturaId/fec
 
 // ── Simple mode endpoints ────────────────────────────────
 
-const SIMPLE_RESULTS_KEY = 'simple_uploads/_resultados.json';
+// El workspace "simple" es un area de trabajo temporal POR USUARIO. Antes era
+// una unica carpeta global: cualquier autenticado leia las facturas que subia
+// otro. El `sub` de Cognito es un UUID, asi que sirve de namespace directo.
+const simpleDir = (req) => `simple_uploads/${req.user.sub}`;
+const simpleResultsKey = (req) => `${simpleDir(req)}/_resultados.json`;
 
 router.post('/simple/upload', upload.array('files'), async (req, res) => {
   try {
     const supported = (req.files || []).filter(f => isSupported(f.originalname));
     const subidos = await Promise.all(
       supported.map(f =>
-        storageService.uploadFile(`simple_uploads/${f.originalname}`, f.buffer, f.mimetype)
+        storageService.uploadFile(`${simpleDir(req)}/${f.originalname}`, f.buffer, f.mimetype)
           .then(() => f.originalname)
       )
     );
@@ -508,51 +547,51 @@ router.post('/simple/upload', upload.array('files'), async (req, res) => {
   }
 });
 
-router.get('/simple/resultados', async (_req, res) => {
+router.get('/simple/resultados', async (req, res) => {
   try {
-    const buffer = await storageService.downloadFile(SIMPLE_RESULTS_KEY);
+    const buffer = await storageService.downloadFile(simpleResultsKey(req));
     return res.json(JSON.parse(buffer.toString('utf-8')));
   } catch {
     res.json([]);
   }
 });
 
-router.get('/simple/analizar', async (_req, res) => {
+router.get('/simple/analizar', async (req, res) => {
   try {
-    const fileList = await storageService.listFiles('simple_uploads');
+    const fileList = await storageService.listFiles(simpleDir(req));
     const archivosData = await Promise.all(
       (fileList || [])
         .filter(f => f.name !== '_resultados.json' && isSupported(f.name))
         .map(f =>
-          storageService.downloadFile(`simple_uploads/${f.name}`)
+          storageService.downloadFile(`${simpleDir(req)}/${f.name}`)
             .then(buffer => ({ buffer, mimeType: getMimeType(f.name), filename: f.name }))
         )
     );
 
     const resultados = await facturaService.analizarMultipleArchivos(archivosData);
-    await storageService.uploadFile(SIMPLE_RESULTS_KEY, Buffer.from(JSON.stringify(resultados, null, 2)), 'application/json');
+    await storageService.uploadFile(simpleResultsKey(req), Buffer.from(JSON.stringify(resultados, null, 2)), 'application/json');
     res.json(resultados);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-router.get('/simple/excel', async (_req, res) => {
+router.get('/simple/excel', async (req, res) => {
   try {
     let resultados = [];
     try {
-      const buffer = await storageService.downloadFile(SIMPLE_RESULTS_KEY);
+      const buffer = await storageService.downloadFile(simpleResultsKey(req));
       resultados = JSON.parse(buffer.toString('utf-8'));
     } catch { }
 
     if (!resultados.length) {
       // fallback inline analyze
-      const fileList = await storageService.listFiles('simple_uploads');
+      const fileList = await storageService.listFiles(simpleDir(req));
       const archivosData = await Promise.all(
         (fileList || [])
           .filter(f => f.name !== '_resultados.json' && isSupported(f.name))
           .map(f =>
-            storageService.downloadFile(`simple_uploads/${f.name}`)
+            storageService.downloadFile(`${simpleDir(req)}/${f.name}`)
               .then(buffer => ({ buffer, mimeType: getMimeType(f.name), filename: f.name }))
           )
       );
@@ -578,9 +617,22 @@ router.post('/simple/asociar', async (req, res) => {
     const { empresaId, proyectoId, periodo } = req.body;
     if (!empresaId || !proyectoId || !periodo) return res.status(400).json({ error: 'Faltan datos' });
 
+    // El empresaId llega por body, asi que esta ruta no pasa por cargarAcceso:
+    // verificamos el permiso de escritura sobre facturas a mano.
+    const acceso = await accesoService.getAcceso(req.user, empresaId);
+    if (!acceso.lectura) return res.status(404).json({ error: 'Empresa no encontrada' });
+    if (!puedeEscribir(acceso, 'facturas')) {
+      return res.status(403).json({ error: 'No tenes permiso de escritura sobre "facturas" en esta empresa' });
+    }
+    // Esta ruta no cuelga de /api/empresas/:empresaId, asi que tampoco pasa por
+    // cargarProyecto: el proyecto hay que atarlo a la empresa a mano.
+    if (!(await proyectoPerteneceAEmpresa(proyectoId, empresaId))) {
+      return res.status(404).json({ error: 'Proyecto no encontrado' });
+    }
+
     let resultadosSimples = [];
     try {
-      const buffer = await storageService.downloadFile(SIMPLE_RESULTS_KEY);
+      const buffer = await storageService.downloadFile(simpleResultsKey(req));
       resultadosSimples = JSON.parse(buffer.toString('utf-8'));
     } catch { }
 
@@ -593,7 +645,7 @@ router.post('/simple/asociar', async (req, res) => {
       resultadosSimples
         .filter(r => r.archivo)
         .map(r =>
-          storageService.downloadFile(`simple_uploads/${r.archivo}`)
+          storageService.downloadFile(`${simpleDir(req)}/${r.archivo}`)
             .then(srcBuf =>
               storageService.uploadFile(`${folderPath}/${r.archivo}`, srcBuf, getMimeType(r.archivo))
             )
@@ -618,7 +670,7 @@ router.post('/simple/asociar', async (req, res) => {
     const combinedResults = Array.from(destinoMap.values());
     await guardarResultadosDB(proyectoId, periodo, combinedResults);
 
-    try { await storageService.deleteFile(SIMPLE_RESULTS_KEY); } catch (e) { }
+    try { await storageService.deleteFile(simpleResultsKey(req)); } catch (e) { }
 
     res.json({ success: true, asociados: resultadosSimples.length, archivos_copiados: copiados });
   } catch (e) {

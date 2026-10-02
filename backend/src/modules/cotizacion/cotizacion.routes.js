@@ -1,5 +1,6 @@
 const { Router } = require('express');
 const cotizacionService = require('./cotizacion.service');
+const { requireMaster } = require('../../middleware/auth.middleware');
 
 const router = Router();
 
@@ -20,7 +21,9 @@ router.get('/', async (req, res) => {
 });
 
 // Eliminar (para el módulo de configuración)
-router.delete('/:id', async (req, res) => {
+// Las cotizaciones son datos globales que alimentan los calculos de todas las
+// empresas: borrarlas no puede estar al alcance de cualquier usuario logueado.
+router.delete('/:id', requireMaster, async (req, res) => {
     const ok = await cotizacionService.eliminar(req.params.id);
     res.status(ok ? 200 : 404).json({ ok });
 });

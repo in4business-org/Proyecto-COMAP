@@ -13,6 +13,7 @@ const ProyectoDetail = lazy(() => import('./pages/ProyectoDetail'))
 const UserSettings = lazy(() => import('./pages/UserSettings'))
 const OrgSettings = lazy(() => import('./pages/OrgSettings'))
 const InboxPage = lazy(() => import('./pages/Inbox'))
+const Admin = lazy(() => import('./pages/Admin'))
 
 export default function App() {
   return (
@@ -33,6 +34,13 @@ export default function App() {
               <Route path="/inbox" element={<InboxPage />} />
               <Route path="/settings/user" element={<UserSettings />} />
               <Route path="/settings/organization" element={<OrgSettings />} />
+            </Route>
+          </Route>
+
+          {/* Rutas exclusivas de administradores (grupo `admins` de Cognito) */}
+          <Route element={<ProtectedRoute adminOnly />}>
+            <Route element={<Layout />}>
+              <Route path="/admin" element={<Admin />} />
             </Route>
           </Route>
         </Routes>

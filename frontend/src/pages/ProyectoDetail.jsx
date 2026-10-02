@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge'
 import { LoadingState, EmptyState, Spinner } from '@/components/ui/loading'
 import { cn } from '@/lib/utils'
 import { empresas as empApi, proyectos as projApi, facturas as factApi, checklist as checkApi, cotizaciones as cotApi } from '@/lib/api'
+import { useAuth } from '../context/AuthContext'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 
 /* ─── CellDropdown ────────────────────────────────── */
@@ -222,6 +223,10 @@ function CellDatePicker({ id, value, onChange, open, onOpen }) {
 /* ─── Facturas ────────────────────────────────────── */
 
 function FacturasTab({ empresaId, proyectoId, periodos, meta, empresa }) {
+  // Escritura sobre facturas en esta empresa. Es cosmetico: el backend
+  // rechaza igual con 403 si alguien fuerza la llamada.
+  const { puedeEscribir } = useAuth()
+  const puedeEditar = puedeEscribir(empresaId, 'facturas')
   const [activePeriodo, setActivePeriodo] = useState('presentacion')
   const [files, setFiles] = useState([])
   const [uploading, setUploading] = useState(false)
@@ -748,7 +753,7 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta, empresa }) {
             <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
               Plan de ejecución · <span className="normal-case font-normal">{activePeriodo === 'presentacion' ? 'Presentación' : `Control ${activePeriodo.replace('control_', '')}`}</span>
             </h2>
-            {(planDirty || planSaving) && (
+            {(planDirty || planSaving) && puedeEditar && (
               <Button
                 onClick={handlePlanSave}
                 disabled={planSaving}
@@ -848,6 +853,13 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta, empresa }) {
             </Button>
           </div>
 
+          {!puedeEditar && (
+            <p className="rounded-lg border border-border/60 bg-muted/30 px-3.5 py-2.5 text-[12px] text-muted-foreground">
+              Tenés acceso de sólo lectura a las facturas de esta empresa.
+            </p>
+          )}
+
+          {puedeEditar && (
           <div className="rounded-xl border-[1.5px] border-dashed border-border/60 p-8 text-center bg-card/10 hover:bg-primary/5 hover:border-primary/40 transition-colors group">
             <input
               type="file"
@@ -882,6 +894,7 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta, empresa }) {
               </div>
             )}
           </div>
+          )}
           {uploadMsg && <p className="text-[11px] text-success font-medium mt-3 text-center">{uploadMsg}</p>}
         </div>
 
@@ -892,15 +905,17 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta, empresa }) {
             <div className="flex gap-2 flex-wrap">
               {!isEditing ? (
                 <>
-                  <Button
-                    onClick={handleEditToggle}
-                    disabled={loadingResults}
-                    variant="outline"
-                    size="sm"
-                    className="h-[28px] text-[11px] gap-1.5"
-                  >
-                    Editar
-                  </Button>
+                  {puedeEditar && (
+                    <Button
+                      onClick={handleEditToggle}
+                      disabled={loadingResults}
+                      variant="outline"
+                      size="sm"
+                      className="h-[28px] text-[11px] gap-1.5"
+                    >
+                      Editar
+                    </Button>
+                  )}
                   <Button
                     onClick={handleExport}
                     disabled={exporting || !results?.length}
@@ -1236,6 +1251,8 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta, empresa }) {
 const ESTADO_ORDER = { pendiente: 0, completado: 1, no_aplica: 2 }
 
 function ChecklistTab({ empresaId, proyectoId, onCountUpdate }) {
+  const { puedeEscribir } = useAuth()
+  const puedeEditar = puedeEscribir(empresaId, 'checklist')
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [uploadingId, setUploadingId] = useState(null)
@@ -1342,7 +1359,7 @@ function ChecklistTab({ empresaId, proyectoId, onCountUpdate }) {
           </div>
         </div>
         <div className="flex items-center gap-1.5 pl-6">
-          {item.acepta_archivo && (
+          {item.acepta_archivo && puedeEditar && (
             <>
               <input type="file" id={`cf-${item.id}`} className="hidden" onChange={(e) => e.target.files[0] && handleFileUpload(item.id, e.target.files[0])} />
               <label htmlFor={`cf-${item.id}`} className="cursor-pointer text-[10px] font-medium border border-border/60 rounded px-2 h-[22px] flex items-center bg-background hover:bg-primary/5 hover:border-primary/30 transition-all gap-1">
@@ -1352,15 +1369,19 @@ function ChecklistTab({ empresaId, proyectoId, onCountUpdate }) {
           )}
           <button
             onClick={() => handleToggle(item, 'completado')}
+            disabled={!puedeEditar}
             className={cn(
               'h-[22px] px-2 rounded border text-[10px] font-medium transition-all',
+              'disabled:opacity-60 disabled:cursor-not-allowed',
               isOk ? 'bg-success/15 border-success/40 text-success' : 'bg-background border-border/60 text-muted-foreground hover:border-success/50 hover:text-success'
             )}
           >✓ OK</button>
           <button
             onClick={() => handleToggle(item, 'no_aplica')}
+            disabled={!puedeEditar}
             className={cn(
               'h-[22px] px-2 rounded border text-[10px] font-medium transition-all',
+              'disabled:opacity-60 disabled:cursor-not-allowed',
               isNa ? 'bg-muted border-border/80 text-foreground' : 'bg-background border-border/60 text-muted-foreground hover:border-muted-foreground/50 hover:text-foreground'
             )}
           >N/A</button>
@@ -1371,6 +1392,11 @@ function ChecklistTab({ empresaId, proyectoId, onCountUpdate }) {
 
   return (
     <div className="p-4 space-y-5">
+      {!puedeEditar && (
+        <p className="rounded-lg border border-border/60 bg-muted/30 px-3.5 py-2.5 text-[12px] text-muted-foreground">
+          Tenés acceso de sólo lectura al checklist de esta empresa.
+        </p>
+      )}
       <p className="text-[11px] text-muted-foreground">
         <span className="text-warning font-medium">{pendientes} pendientes</span>
         {' · '}<span className="text-success font-medium">{completados} completados</span>

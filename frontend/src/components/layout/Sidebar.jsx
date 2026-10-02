@@ -13,6 +13,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Inbox,
+  ShieldCheck,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { empresas as empApi, proyectos as projApi } from '@/lib/api'
@@ -23,6 +24,9 @@ const settingsNav = [
   { name: 'Configuración', href: '/settings/user', icon: Settings },
   { name: 'Organización', href: '/settings/organization', icon: Users },
 ]
+
+// Sólo visible para el grupo `admins`
+const adminNav = { name: 'Administración', href: '/admin', icon: ShieldCheck }
 
 // Module-level cache: persists across re-mounts (every page navigation re-mounts Layout)
 let empresasCache = null
@@ -42,7 +46,7 @@ export function Sidebar() {
   const location = useLocation()
   const navigate = useNavigate()
   const { theme, toggleTheme } = useTheme()
-  const { user } = useAuth()
+  const { user, isAdmin, isMaster } = useAuth()
 
   const [empresas, setEmpresas] = useState([])
   const [proyectosMap, setProyectosMap] = useState({})
@@ -241,14 +245,16 @@ export function Sidebar() {
                   <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground/60">
                     Empresas
                   </span>
-                  <Link
-                    to="/empresas"
-                    onClick={() => setMobileOpen(false)}
-                    className="text-[10px] font-medium text-primary hover:text-primary/80 transition-colors uppercase tracking-wider flex items-center gap-0.5"
-                  >
-                    <Plus size={11} />
-                    Nueva
-                  </Link>
+                  {isMaster && (
+                    <Link
+                      to="/empresas"
+                      onClick={() => setMobileOpen(false)}
+                      className="text-[10px] font-medium text-primary hover:text-primary/80 transition-colors uppercase tracking-wider flex items-center gap-0.5"
+                    >
+                      <Plus size={11} />
+                      Nueva
+                    </Link>
+                  )}
                 </>
               )}
             </div>
@@ -362,6 +368,17 @@ export function Sidebar() {
           collapsed ? 'px-2 py-2' : 'px-3 py-2',
         )}>
           <nav className="flex flex-col gap-0.5 mb-2">
+            {isAdmin && (
+              <NavLink
+                to={adminNav.href}
+                title={collapsed ? adminNav.name : undefined}
+                onClick={() => setMobileOpen(false)}
+                className={navItemClass(isActive(adminNav.href))}
+              >
+                <adminNav.icon size={16} strokeWidth={1.8} className="shrink-0" />
+                {!collapsed && <span>{adminNav.name}</span>}
+              </NavLink>
+            )}
             {settingsNav.map((item) => (
               <NavLink
                 key={item.href}
