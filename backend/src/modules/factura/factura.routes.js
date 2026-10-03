@@ -424,6 +424,19 @@ router.get('/empresas/:empresaId/proyectos/:proyectoId/:periodo/template-importa
     ws.getColumn(5).numFmt = 'DD/MM/YYYY';
     ws.getRow(1).font = { bold: true };
 
+    // Lista desplegable para tipo_comprobante (columna J)
+    for (let i = 2; i <= 1000; i++) {
+      ws.getCell(`J${i}`).dataValidation = {
+        type: 'list',
+        allowBlank: true,
+        formulae: ['"Factura,Presupuesto"'],
+        showErrorMessage: true,
+        errorStyle: 'stop',
+        errorTitle: 'Tipo inválido',
+        error: 'Elegí Factura o Presupuesto',
+      };
+    }
+
     const buffer = await workbook.xlsx.writeBuffer();
     res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
