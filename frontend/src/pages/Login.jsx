@@ -1,7 +1,20 @@
 import React, { useState } from 'react';
 import { signIn, confirmSignIn } from '../lib/cognito';
 import { useNavigate } from 'react-router-dom';
-import { Lock, Mail, AlertCircle } from 'lucide-react';
+import { Lock, Mail, AlertCircle, Check, X } from 'lucide-react';
+
+// Espejo de la política por defecto del User Pool de Cognito. Si se cambia la
+// política en AWS, hay que actualizar esta lista para que no se contradigan.
+const PASSWORD_RULES = [
+  { label: 'Al menos 8 caracteres', test: (p) => p.length >= 8 },
+  { label: 'Una letra mayúscula', test: (p) => /[A-Z]/.test(p) },
+  { label: 'Una letra minúscula', test: (p) => /[a-z]/.test(p) },
+  { label: 'Un número', test: (p) => /[0-9]/.test(p) },
+  {
+    label: 'Un símbolo (por ej. ! @ # $ % & *)',
+    test: (p) => /[\^$*.[\]{}()?"!@#%&/\\,><':;|_~`=+-]/.test(p),
+  },
+];
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -11,6 +24,7 @@ export default function Login() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const newPasswordValid = PASSWORD_RULES.every((rule) => rule.test(newPassword));
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -121,17 +135,34 @@ export default function Login() {
                     type="password"
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
+                    aria-describedby="password-rules"
                     className="block w-full pl-12 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-indigo-300/50 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-all"
                     placeholder="••••••••"
                     required
                   />
                 </div>
+                <ul id="password-rules" className="mt-3 space-y-1.5">
+                  {PASSWORD_RULES.map((rule) => {
+                    const ok = rule.test(newPassword);
+                    const Icon = ok ? Check : X;
+                    return (
+                      <li
+                        key={rule.label}
+                        className={`flex items-center gap-2 text-sm transition-colors ${ok ? 'text-emerald-300' : 'text-indigo-200/70'}`}
+                      >
+                        <Icon className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+                        <span>{rule.label}</span>
+                        <span className="sr-only">{ok ? '(cumplido)' : '(pendiente)'}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
               </div>
             )}
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || (needsNewPassword && !newPasswordValid)}
               className="w-full flex justify-center py-3.5 px-4 border border-transparent rounded-xl shadow-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all mt-4"
             >
               {loading ? (
