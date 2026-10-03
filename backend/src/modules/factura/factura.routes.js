@@ -675,17 +675,11 @@ router.post('/simple/asociar', async (req, res) => {
     );
     const copiados = copyResults.filter(r => r.status === 'fulfilled').length;
 
-    const [meta = {}, resultadosDestino = []] = await Promise.all([
-      proyectoService.getMetadata(empresaId, proyectoId),
-      leerResultadosDB(proyectoId, periodo),
-    ]);
-    const simplesConFecha = resultadosSimples.map(r => ({
-      ...r,
-      fecha_ejecucion: r.fecha_ejecucion || calcularFechaEjecucion(r.tipo_comprobante, r.fecha, meta.fecha_presentacion),
-    }));
+    // guardarResultadosDB completa fecha_ejecucion con la fecha del comprobante si falta
+    const resultadosDestino = await leerResultadosDB(proyectoId, periodo);
     const destinoMap = new Map(resultadosDestino.map(r => [r.archivo, r]));
 
-    for (const r of simplesConFecha) {
+    for (const r of resultadosSimples) {
       destinoMap.set(r.archivo, r);
     }
 
