@@ -15,6 +15,15 @@ import { empresas as empApi, proyectos as projApi, facturas as factApi, checklis
 import { useAuth } from '../context/AuthContext'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 
+// Extrae el año de fecha_ejecucion, que se guarda como DD/MM/YYYY
+const getYearFromFechaEjecucion = (fe) => {
+  if (!fe) return null
+  const parts = fe.split('/')
+  if (parts.length === 3) return parseInt(parts[2])
+  // fallback para registros viejos en formato YYYY-MM-DD
+  return parseInt(fe.substring(0, 4))
+}
+
 /* ─── CellDropdown ────────────────────────────────── */
 
 function CellDropdown({ id, value, options, onChange, open, onOpen }) {
@@ -498,21 +507,29 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta, empresa }) {
       .sort((a, b) => b[1] - a[1])
       .map(([cat, ui]) => ({ cat, ui }))
 
+    const sinTipo = withMonto.filter(f => f.tipo_comprobante !== 'Factura' && f.tipo_comprobante !== 'Presupuesto')
+    const sinTipoUI = sinTipo.reduce((s, f) => s + (toUI(f.monto, f.moneda) ?? 0), 0)
+    let sinFechaEjecCount = 0
+
     const anioMap = {}
     withMonto.forEach(f => {
-      const parts = (f.fecha || '').split('/')
-      if (parts.length === 3) {
-        const key = parts[2]
-        if (!anioMap[key]) anioMap[key] = { anio: key, factura: 0, presupuesto: 0 }
-        const ui = toUI(f.monto, f.moneda) ?? 0
-        if (f.tipo_comprobante === 'Factura') anioMap[key].factura += ui
-        else anioMap[key].presupuesto += ui
-      }
+      const tipo = f.tipo_comprobante
+      if (tipo !== 'Factura' && tipo !== 'Presupuesto') return
+      const year = getYearFromFechaEjecucion(f.fecha_ejecucion)
+      if (!year || Number.isNaN(year)) { sinFechaEjecCount++; return }
+      const key = String(year)
+      if (!anioMap[key]) anioMap[key] = { anio: key, factura: 0, presupuesto: 0 }
+      const ui = toUI(f.monto, f.moneda) ?? 0
+      if (tipo === 'Factura') anioMap[key].factura += ui
+      else anioMap[key].presupuesto += ui
     })
     const porAnio = Object.values(anioMap).sort((a, b) => a.anio.localeCompare(b.anio))
       .map(d => ({ ...d, label: d.anio }))
 
-    return { totalUI, facturaUI, presupuestoUI, porCategoria, porAnio, total: results.length, conMonto: withMonto.length }
+    return {
+      totalUI, facturaUI, presupuestoUI, porCategoria, porAnio, total: results.length, conMonto: withMonto.length,
+      sinTipoCount: sinTipo.length, sinTipoUI, sinFechaEjecCount,
+    }
   }, [results, cotizacion, toUI])
 
   const SORT_OPTIONS = [
@@ -554,15 +571,6 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta, empresa }) {
   const yearToEjercicioLabel = (year, base) => {
     const n = year - base
     return n === 0 ? `Ejercicio 0 - ${base}` : `Ejercicio ${n}`
-  }
-
-  // Extrae el año de fecha_ejecucion, que se guarda como DD/MM/YYYY
-  const getYearFromFechaEjecucion = (fe) => {
-    if (!fe) return null
-    const parts = fe.split('/')
-    if (parts.length === 3) return parseInt(parts[2])
-    // fallback para registros viejos en formato YYYY-MM-DD
-    return parseInt(fe.substring(0, 4))
   }
 
   // Investment year columns derived from periodos: each control_YYYY → investment year YYYY-1
@@ -661,22 +669,33 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta, empresa }) {
           {/* Tarjetas de resumen */}
           <div className="grid grid-cols-3 gap-3">
             {[
-              { label: 'Total inversión', val: fmtUI(kpis.totalUI), sub: `${kpis.total} comprobante${kpis.total !== 1 ? 's' : ''}` },
+              {
+                label: 'Total inversión', val: fmtUI(kpis.totalUI), sub: `${kpis.total} comprobante${kpis.total !== 1 ? 's' : ''}`,
+                warning: kpis.sinTipoCount > 0
+                  ? `⚠ ${kpis.sinTipoCount} sin tipo · ${fmtUI(kpis.sinTipoUI)} sin clasificar`
+                  : null,
+              },
               { label: 'Facturas', val: fmtUI(kpis.facturaUI), sub: fmtPct(kpis.facturaUI, kpis.totalUI) + ' del total', color: 'text-primary' },
               { label: 'Presupuestos', val: fmtUI(kpis.presupuestoUI), sub: fmtPct(kpis.presupuestoUI, kpis.totalUI) + ' del total', color: 'text-warning' },
-            ].map(({ label, val, sub, color }) => (
-              <div key={label} className="bg-card border border-border/60 rounded-lg p-3">
+            ].map(({ label, val, sub, color, warning }) => (
+              <div key={label} className={cn('bg-card border rounded-lg p-3', warning ? 'border-warning/60' : 'border-border/60')}>
                 <p className={cn('text-[14px] font-medium truncate', color || 'text-foreground')}>{val}</p>
                 <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mt-1">{label}</p>
                 {sub && <p className="text-[11px] text-muted-foreground/70 mt-0.5">{sub}</p>}
+                {warning && <p className="text-[11px] text-warning mt-0.5">{warning}</p>}
               </div>
             ))}
           </div>
 
           {/* Gráfico de inversión anual */}
-          {kpis.porAnio.length > 0 && (
+          {(kpis.porAnio.length > 0 || kpis.sinFechaEjecCount > 0) && (
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-2">Inversión por año (UI)</p>
+              {kpis.sinFechaEjecCount > 0 && (
+                <p className="text-[11px] text-warning mb-2">
+                  ⚠ Hay {kpis.sinFechaEjecCount} comprobante{kpis.sinFechaEjecCount !== 1 ? 's' : ''} sin fecha de ejecución (no incluido{kpis.sinFechaEjecCount !== 1 ? 's' : ''} en el gráfico)
+                </p>
+              )}
               <ResponsiveContainer width="100%" height={180}>
                 <BarChart data={kpis.porAnio} margin={{ top: 4, right: 8, left: 8, bottom: 0 }} barSize={18}>
                   <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.08} />
