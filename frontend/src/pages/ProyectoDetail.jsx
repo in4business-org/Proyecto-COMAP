@@ -15,6 +15,15 @@ import { empresas as empApi, proyectos as projApi, facturas as factApi, checklis
 import { useAuth } from '../context/AuthContext'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 
+// Extrae el año de fecha_ejecucion, que se guarda como DD/MM/YYYY
+const getYearFromFechaEjecucion = (fe) => {
+  if (!fe) return null
+  const parts = fe.split('/')
+  if (parts.length === 3) return parseInt(parts[2])
+  // fallback para registros viejos en formato YYYY-MM-DD
+  return parseInt(fe.substring(0, 4))
+}
+
 /* ─── CellDropdown ────────────────────────────────── */
 
 function CellDropdown({ id, value, options, onChange, open, onOpen }) {
@@ -500,14 +509,15 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta, empresa }) {
 
     const anioMap = {}
     withMonto.forEach(f => {
-      const parts = (f.fecha || '').split('/')
-      if (parts.length === 3) {
-        const key = parts[2]
-        if (!anioMap[key]) anioMap[key] = { anio: key, factura: 0, presupuesto: 0 }
-        const ui = toUI(f.monto, f.moneda) ?? 0
-        if (f.tipo_comprobante === 'Factura') anioMap[key].factura += ui
-        else anioMap[key].presupuesto += ui
-      }
+      const tipo = f.tipo_comprobante
+      if (tipo !== 'Factura' && tipo !== 'Presupuesto') return
+      const year = getYearFromFechaEjecucion(f.fecha_ejecucion)
+      if (!year || Number.isNaN(year)) return
+      const key = String(year)
+      if (!anioMap[key]) anioMap[key] = { anio: key, factura: 0, presupuesto: 0 }
+      const ui = toUI(f.monto, f.moneda) ?? 0
+      if (tipo === 'Factura') anioMap[key].factura += ui
+      else anioMap[key].presupuesto += ui
     })
     const porAnio = Object.values(anioMap).sort((a, b) => a.anio.localeCompare(b.anio))
       .map(d => ({ ...d, label: d.anio }))
@@ -554,15 +564,6 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta, empresa }) {
   const yearToEjercicioLabel = (year, base) => {
     const n = year - base
     return n === 0 ? `Ejercicio 0 - ${base}` : `Ejercicio ${n}`
-  }
-
-  // Extrae el año de fecha_ejecucion, que se guarda como DD/MM/YYYY
-  const getYearFromFechaEjecucion = (fe) => {
-    if (!fe) return null
-    const parts = fe.split('/')
-    if (parts.length === 3) return parseInt(parts[2])
-    // fallback para registros viejos en formato YYYY-MM-DD
-    return parseInt(fe.substring(0, 4))
   }
 
   // Investment year columns derived from periodos: each control_YYYY → investment year YYYY-1
