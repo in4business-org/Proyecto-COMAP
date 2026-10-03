@@ -20,6 +20,15 @@ function toFechaDDMMYYYY(val) {
   return date ? formatearFecha(date) : null;
 }
 
+/** Solo acepta 'Factura' o 'Presupuesto' (sin distinguir mayúsculas); cualquier otro valor queda en null */
+function normalizarTipoComprobante(val) {
+  if (typeof val !== 'string') return null;
+  const v = val.trim().toLowerCase();
+  if (v === 'factura') return 'Factura';
+  if (v === 'presupuesto') return 'Presupuesto';
+  return null;
+}
+
 const {
   requireEscritura,
   proyectoPerteneceAEmpresa,
@@ -77,7 +86,7 @@ async function guardarResultadosDB(proyectoId, periodo, resultados) {
         categoria: r.categoria || null,
         rut_receptor: r.rut_receptor || null,
         razon_social_receptor: r.razon_social_receptor || null,
-        tipo_comprobante: r.tipo_comprobante || null,
+        tipo_comprobante: normalizarTipoComprobante(r.tipo_comprobante),
         fecha_ejecucion: toFechaDDMMYYYY(r.fecha_ejecucion) || toFechaDDMMYYYY(r.fecha) || null,
         texto_extraido: Boolean(r.texto_extraido),
       };
@@ -166,7 +175,7 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/subir-y-procesa
           categoria: r.categoria || null,
           rut_receptor: r.rut_receptor || null,
           razon_social_receptor: r.razon_social_receptor || null,
-          tipo_comprobante: r.tipo_comprobante || null,
+          tipo_comprobante: normalizarTipoComprobante(r.tipo_comprobante),
           fecha_ejecucion: toFechaDDMMYYYY(r.fecha_ejecucion) || toFechaDDMMYYYY(r.fecha) || null,
           texto_extraido: Boolean(r.texto_extraido),
         })),
@@ -455,7 +464,7 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/importar', requ
       const cantidadRaw = row.getCell(8).value;
       const cantidad = cantidadRaw != null && cantidadRaw !== '' ? parseInt(cantidadRaw) : 1;
       const categoria = row.getCell(9).text?.trim() || null;
-      const tipo_comprobante = row.getCell(10).text?.trim() || null;
+      const tipo_comprobante = normalizarTipoComprobante(row.getCell(10).text);
       const fechaEjecucionRaw = row.getCell(11).value;
       const fecha_ejecucion_excel = fechaEjecucionRaw instanceof Date
         ? formatearFecha(fechaEjecucionRaw)
