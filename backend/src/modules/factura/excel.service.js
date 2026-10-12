@@ -1,7 +1,7 @@
 const ExcelJS = require('exceljs');
 const fs = require('fs');
 const { TEMPLATE_CUADRO } = require('../../config/storage.config');
-const { normalizarMonto, normalizarFecha } = require('../../common/utils/normalize');
+const { normalizarMonto, normalizarFecha, anioDeFecha } = require('../../common/utils/normalize');
 
 const CATEGORY_CONFIG = {
   'OC/Imprevistos': { order: 11, insertRow: 40 },
@@ -227,10 +227,9 @@ class ExcelService {
   _llenarCronogramaInversiones(ws, facturas, opciones) {
     const { cotizacion_ui, cotizacion_usd, fecha_presentacion } = opciones;
 
-    let anio_presentacion = opciones.anio_presentacion;
-    if (!anio_presentacion && fecha_presentacion) {
-      anio_presentacion = new Date(fecha_presentacion).getFullYear();
-    }
+    // anioDeFecha y no new Date(): '2026-01-01' se parsea como UTC y en
+    // Uruguay daría 2025.
+    const anio_presentacion = opciones.anio_presentacion || anioDeFecha(fecha_presentacion);
 
     if (!anio_presentacion || !cotizacion_ui) return;
 
@@ -248,8 +247,10 @@ class ExcelService {
       const fechaEjecucion = factura.fecha_ejecucion;
       if (!fechaEjecucion) continue;
 
-      const anioEjecucion = parseInt(fechaEjecucion.substring(0, 4), 10);
-      if (isNaN(anioEjecucion)) continue;
+      // fecha_ejecucion se guarda DD/MM/YYYY: antes se leían los primeros 4
+      // caracteres como año y el cronograma salía siempre vacío.
+      const anioEjecucion = anioDeFecha(fechaEjecucion);
+      if (!anioEjecucion) continue;
 
       const diff = anioEjecucion - anio_presentacion;
 

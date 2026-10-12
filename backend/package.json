@@ -8,7 +8,7 @@
     "dev": "nodemon src/main.js",
     "setup:cognito": "node scripts/setup-cognito-groups.js",
     "postinstall": "prisma generate",
-    "test": "node test/permisos.test.js && node test/admin-empresa.test.js && node test/rutas.test.js"
+    "test": "node test/permisos.test.js && node test/admin-empresa.test.js && node test/rutas.test.js && node test/excel.test.js"
   },
   "dependencies": {
     "@aws-sdk/client-cognito-identity-provider": "^3.1137.0",
