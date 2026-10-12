@@ -60,6 +60,12 @@ model Proyecto {
   cotizacion_ui        Float?
   cotizacion_usd       Float?
   expediente           String?
+  // Respuestas de "Antes de empezar" en el checklist. Un objeto
+  // { pregunta: true | false } con las claves de PREGUNTAS_CHECKLIST
+  // (common/constants/checklist-items.js). Una pregunta sin responder no
+  // está. Si la respuesta es "no", los ítems que dependen de ella se
+  // muestran como "no aplica" (se calcula al leer, no se guarda en cada ítem).
+  perfil_checklist     Json?
   checklists           ChecklistItem[]
   facturas             Factura[]
   createdAt            DateTime   @default(now())
