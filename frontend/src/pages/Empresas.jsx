@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Building2, Plus, Search, ArrowUpRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { LoadingState, EmptyState } from '@/components/ui/loading'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { empresas as empApi } from '@/lib/api'
 import { useAuth } from '../context/AuthContext'
 
@@ -15,16 +14,11 @@ export default function Empresas() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [creating, setCreating] = useState(false)
-  const [form, setForm] = useState({ rut: '', nombre: '' })
+  const navigate = useNavigate()
 
-  const load = () => {
-    setLoading(true)
+  useEffect(() => {
     empApi.list().then(setEmpresas).catch(console.error).finally(() => setLoading(false))
-  }
-
-  useEffect(() => { load() }, [])
+  }, [])
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), 250)
@@ -35,18 +29,6 @@ export default function Empresas() {
     `${e.nombre} ${e.rut}`.toLowerCase().includes(debouncedSearch.toLowerCase())
   )
 
-  const handleCreate = async () => {
-    if (!form.rut || !form.nombre) return
-    setCreating(true)
-    try {
-      await empApi.create(form.rut, form.nombre)
-      setDialogOpen(false)
-      setForm({ rut: '', nombre: '' })
-      load()
-    } catch (err) { console.error(err) }
-    finally { setCreating(false) }
-  }
-
   return (
     <div className="animate-fade-up">
       {/* Header */}
@@ -56,7 +38,7 @@ export default function Empresas() {
           <p className="text-sm text-muted-foreground mt-0.5">{empresas.length} registradas</p>
         </div>
         {isMaster && (
-          <Button onClick={() => setDialogOpen(true)} size="sm" className="gap-1.5">
+          <Button onClick={() => navigate('/empresas/nueva')} size="sm" className="gap-1.5">
             <Plus size={14} />
             Nueva
           </Button>
@@ -86,13 +68,13 @@ export default function Empresas() {
           title={search ? 'Sin resultados' : 'Sin empresas'}
           description={
             search
-              ? 'Proba con otro termino'
+              ? 'Probá con otro término'
               : isMaster
-                ? 'Registra una empresa para empezar'
-                : 'Todavia no te asignaron ninguna empresa. Pedile acceso a un administrador.'
+                ? 'Registrá una empresa para empezar'
+                : 'Todavía no te asignaron ninguna empresa. Pedile acceso a un administrador.'
           }
           action={!search && isMaster && (
-            <Button onClick={() => setDialogOpen(true)} size="sm" variant="outline">
+            <Button onClick={() => navigate('/empresas/nueva')} size="sm" variant="outline">
               <Plus size={14} /> Crear empresa
             </Button>
           )}
@@ -132,31 +114,6 @@ export default function Empresas() {
           </table>
         </div>
       )}
-
-      {/* Dialog */}
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)}>
-        <DialogContent onClose={() => setDialogOpen(false)}>
-          <DialogHeader>
-            <DialogTitle>Nueva empresa</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-1.5">
-              <label htmlFor="empresa-rut" className="text-xs font-medium text-muted-foreground">RUT</label>
-              <Input id="empresa-rut" placeholder="123456789012" value={form.rut} onChange={(e) => setForm({ ...form, rut: e.target.value })} />
-            </div>
-            <div className="space-y-1.5">
-              <label htmlFor="empresa-nombre" className="text-xs font-medium text-muted-foreground">Nombre</label>
-              <Input id="empresa-nombre" placeholder="Nombre de la empresa" value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setDialogOpen(false)} size="sm">Cancelar</Button>
-            <Button onClick={handleCreate} disabled={creating || !form.rut || !form.nombre} size="sm">
-              {creating ? 'Creando...' : 'Crear'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

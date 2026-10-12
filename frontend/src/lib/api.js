@@ -43,7 +43,12 @@ async function request(url, options = {}) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || data.detail || `Request failed: ${res.status}`);
+    // status y data quedan en el error para que la pantalla pueda reaccionar
+    // (p. ej. un 409 trae el id de lo que ya existía)
+    const err = new Error(data.error || data.detail || `Request failed: ${res.status}`);
+    err.status = res.status;
+    err.data = data;
+    throw err;
   }
   const contentType = res.headers.get('content-type') || '';
   if (contentType.includes('application/json')) return res.json();
@@ -99,8 +104,9 @@ export const admin = {
 export const empresas = {
   list: () => request('/empresas'),
   get: (id) => request(`/empresas/${id}`),
-  create: (rut, nombre) =>
-    request('/empresas', { method: 'POST', body: JSON.stringify({ rut, nombre }) }),
+  // `datos`: el resto de los campos de la empresa (razón social, domicilios...)
+  create: (rut, nombre, datos = {}) =>
+    request('/empresas', { method: 'POST', body: JSON.stringify({ ...datos, rut, nombre }) }),
   update: (id, data) => request(`/empresas/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
 };
 

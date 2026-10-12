@@ -275,7 +275,7 @@ export function Sidebar() {
                   </span>
                   {isMaster && (
                     <Link
-                      to="/empresas"
+                      to="/empresas/nueva"
                       onClick={() => setMobileOpen(false)}
                       className="text-[10px] font-medium text-primary hover:text-primary/80 transition-colors uppercase tracking-wider flex items-center gap-0.5"
                     >

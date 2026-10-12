@@ -91,7 +91,9 @@ export const admin = {
   ]),
   getAccesos: () => wait([{ empresaId: 'e1', escritura: ['facturas'] }]),
   setAccesos: (u, a) => wait(a),
-  crearUsuario: () => wait({ passwordTemporal: 'Abc123!xyz' }),
+  crearUsuario: ({ email }) => (email === 'ana@ejemplo.uy'
+    ? Promise.reject(Object.assign(new Error('Ya existe un usuario con ese email'), { status: 409 }))
+    : wait({ usuario: { email }, passwordTemporal: null })),
   cambiarRol: () => wait({}),
   cambiarEstado: () => wait({}),
   resetPassword: () => wait({ passwordTemporal: 'Abc123!xyz' }),
@@ -103,9 +105,10 @@ export const empresas = {
   get: (id) => wait(db.empresas.find((e) => e.id === id)),
   create: (rut, nombre, extra = {}) => {
     if (db.empresas.some((e) => e.rut === rut)) {
-      return Promise.reject(Object.assign(new Error('Ya existe una empresa con ese RUT'), { status: 409 }))
+      const existente = db.empresas.find((e) => e.rut === rut)
+      return Promise.reject(Object.assign(new Error(`Ya existe una empresa con ese RUT: ${existente.nombre}`), { status: 409, data: { empresa_id: existente.id } }))
     }
-    const id = `e${db.empresas.length + 1}`
+    const id = `${rut}_${nombre.replace(/\s+/g, '_')}`
     db.empresas.push({ id, rut, nombre, ...extra })
     db.proyectos[id] = []
     return wait({ empresa_id: id })

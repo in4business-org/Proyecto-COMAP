@@ -9,6 +9,7 @@ const Login = lazy(() => import('./pages/Login'))
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const Empresas = lazy(() => import('./pages/Empresas'))
 const EmpresaDetail = lazy(() => import('./pages/EmpresaDetail'))
+const NuevaEmpresa = lazy(() => import('./pages/NuevaEmpresa'))
 const ProyectoDetail = lazy(() => import('./pages/ProyectoDetail'))
 const ChecklistProyecto = lazy(() => import('./pages/ChecklistProyecto'))
 const UserSettings = lazy(() => import('./pages/UserSettings'))
@@ -30,6 +31,7 @@ export default function App() {
             <Route element={<Layout />}>
               <Route path="/" element={<Dashboard />} />
               <Route path="/empresas" element={<Empresas />} />
+              <Route path="/empresas/nueva" element={<NuevaEmpresa />} />
               <Route path="/empresas/:empresaId" element={<EmpresaDetail />} />
               <Route path="/empresas/:empresaId/proyectos/:proyectoId" element={<ProyectoDetail />} />
               <Route path="/empresas/:empresaId/proyectos/:proyectoId/checklist" element={<ChecklistProyecto />} />
