@@ -1,4 +1,4 @@
-import { CHECKLIST as CHECK } from 'virtual:demo-checklist'
+import { CHECKLIST as CHECK, PREGUNTAS } from 'virtual:demo-checklist'
 
 // API simulada del modo demo (`npm run demo`). Reemplaza a lib/api.js con la
 // misma forma de funciones. Los datos viven en memoria y se guardan en el
@@ -42,6 +42,7 @@ const db = {
     },
   },
   checklist: {},
+  perfiles: { p1: { mipyme: false, importacion: false, agro_cannabis: false } },
 }
 
 // Estado guardado de cada ítem, como la tabla ChecklistItem: { item_id: { estado, archivo } }
@@ -64,15 +65,16 @@ export function reiniciarDemo() {
   Object.assign(db, structuredClone(inicial))
 }
 
-/** Checklist armado como lo devuelve el backend */
+/** Checklist armado como lo devuelve el backend (misma regla que checklist-preguntas.js) */
 function armarChecklist(p) {
   const guardados = db.checklist[p] || {}
-  return CHECK.map((i) => ({
-    ...i,
-    estado: guardados[i.id]?.estado || 'pendiente',
-    archivo: guardados[i.id]?.archivo || null,
-    nota_usuario: '',
-  }))
+  const respuestas = db.perfiles[p] || {}
+  return CHECK.map((i) => {
+    const item = { ...i, estado: guardados[i.id]?.estado || 'pendiente', archivo: guardados[i.id]?.archivo || null, nota_usuario: '' }
+    const pregunta = PREGUNTAS.find((q) => q.items.includes(i.id) && respuestas[q.id] === false)
+    if (!pregunta || item.estado === 'completado') return { ...item, no_aplica_por: null }
+    return { ...item, estado: 'no_aplica', no_aplica_por: pregunta.id }
+  })
 }
 
 export const dashboard = { load: () => wait(db.empresas.map((e) => ({ ...e, proyectos: db.proyectos[e.id] || [] }))) }
@@ -147,6 +149,12 @@ export const checklist = {
     return wait({ ok: true, archivo: file.name }, 700)
   },
   downloadFile: () => Promise.reject(new Error('En el modo demo no hay archivos para bajar')),
+  getPerfil: (e, p) => wait({ preguntas: PREGUNTAS, respuestas: db.perfiles[p] || {} }),
+  setPerfil: (e, p, respuestas) => {
+    const limpias = Object.fromEntries(Object.entries(respuestas || {}).filter(([, v]) => typeof v === 'boolean'))
+    db.perfiles[p] = limpias
+    return wait({ respuestas: limpias })
+  },
 }
 
 export const cotizaciones = { getMesAnterior: () => wait({ fecha: '2026-10-31', valor_usd: 40.12, valor_ui: 6.3012 }) }

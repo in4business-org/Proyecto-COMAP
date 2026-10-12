@@ -32,12 +32,12 @@ function modoDemo() {
       const require = createRequire(import.meta.url)
       const base = path.resolve(__dirname, '../backend/src/common/constants')
       const archivos = ['checklist-items.js', 'checklist-preguntas.js']
-      for (const a of archivos) delete require.cache[path.join(base, a)]
+      for (const a of archivos) {
+        delete require.cache[path.join(base, a)]
+        this.addWatchFile(path.join(base, a))
+      }
       const { CHECKLIST_PRESENTACION } = require(path.join(base, 'checklist-items.js'))
-      let PREGUNTAS_CHECKLIST = []
-      try {
-        ;({ PREGUNTAS_CHECKLIST } = require(path.join(base, 'checklist-preguntas.js')))
-      } catch { /* todavía no existe */ }
+      const { PREGUNTAS_CHECKLIST } = require(path.join(base, 'checklist-preguntas.js'))
       return `export const CHECKLIST = ${JSON.stringify(CHECKLIST_PRESENTACION)};\n` +
         `export const PREGUNTAS = ${JSON.stringify(PREGUNTAS_CHECKLIST)};`
     },
