@@ -2,14 +2,14 @@ import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import {
-  ArrowLeft, Upload, Download, FileText,
-  CheckSquare, Check, FolderOpen, Plus, RefreshCw, X,
+  ArrowLeft, Download, FileText,
+  CheckSquare, Check, Plus, RefreshCw, X,
   ChevronLeft, ChevronRight, CalendarDays,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { LoadingState, EmptyState, Spinner } from '@/components/ui/loading'
+import { LoadingState, Spinner } from '@/components/ui/loading'
 import { cn } from '@/lib/utils'
 import { empresas as empApi, proyectos as projApi, facturas as factApi, checklist as checkApi, cotizaciones as cotApi } from '@/lib/api'
 import { useAuth } from '../context/AuthContext'
