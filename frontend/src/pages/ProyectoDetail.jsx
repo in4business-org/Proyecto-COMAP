@@ -616,19 +616,19 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta, empresa }) {
     const itemId = e.dataTransfer.getData('text/plain')
     if (!itemId || !results) return
     setResults(prev => prev.map(r => r.id === itemId ? { ...r, fecha_ejecucion: `01/01/${colKey}` } : r))
-    setKanbanDirty(true)
+    setPlanDirty(true)
   }
 
   const handlePlanSave = async () => {
     if (!results || planSaving) return
-    setKanbanSaving(true)
+    setPlanSaving(true)
     try {
       const saved = await factApi.updateResults(empresaId, proyectoId, activePeriodo, results)
       setResults(saved)
       setResultsCache(prev => ({ ...prev, [activePeriodo]: saved }))
-      setKanbanDirty(false)
+      setPlanDirty(false)
     } catch (err) { console.error(err) }
-    finally { setKanbanSaving(false) }
+    finally { setPlanSaving(false) }
   }
 
   return (
