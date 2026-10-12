@@ -160,6 +160,7 @@ function chequear(desc, ok, detalle) {
     ['POST', '/api/empresas/e1/proyectos', 'proyectos'],
     ['PATCH', '/api/empresas/e1/proyectos/p1/expediente', 'proyectos'],
     ['PATCH', '/api/empresas/e1/proyectos/p1/checklist/i1', 'checklist'],
+    ['PUT', '/api/empresas/e1/proyectos/p1/checklist/perfil', 'checklist'],
     ['POST', '/api/empresas/e1/proyectos/p1/simulador/subir', 'simulador'],
     ['POST', '/api/empresas/e1/proyectos/p1/2024/subir-y-procesar', 'facturas'],
     ['PUT', '/api/empresas/e1/proyectos/p1/2024', 'facturas'],
@@ -173,6 +174,9 @@ function chequear(desc, ok, detalle) {
 
   r = await pedir('PATCH', '/api/empresas/e1/proyectos/p1/checklist/i1', USER);
   chequear('con escritura de checklist, PATCH checklist pasa el guard',
+    r.status !== 403, `status ${r.status}`);
+  r = await pedir('PUT', '/api/empresas/e1/proyectos/p1/checklist/perfil', USER);
+  chequear('con escritura de checklist, PUT perfil pasa el guard',
     r.status !== 403, `status ${r.status}`);
 
   for (const [metodo, url] of [
@@ -217,6 +221,7 @@ function chequear(desc, ok, detalle) {
     ['PATCH', '/api/empresas/e1/proyectos/p2/metadata'],
     ['PATCH', '/api/empresas/e1/proyectos/p2/checklist/i1'],
     ['GET', '/api/empresas/e1/proyectos/p2/checklist'],
+    ['PUT', '/api/empresas/e1/proyectos/p2/checklist/perfil'],
     ['POST', '/api/empresas/e1/proyectos/p2/presentacion/subir-y-procesar'],
     ['POST', '/api/empresas/e1/proyectos/p2/presentacion/excel'],
   ]) {

@@ -17,6 +17,27 @@ router.get('/', async (req, res) => {
   }
 });
 
+// GET /api/empresas/:empresaId/proyectos/:proyectoId/checklist/perfil
+// Preguntas de "Antes de empezar" y lo que se respondió
+router.get('/perfil', async (req, res) => {
+  try {
+    res.json(await checklistService.getPerfil(req.params.proyectoId));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// PUT /api/empresas/:empresaId/proyectos/:proyectoId/checklist/perfil
+// Body: { respuestas: { mipyme: true, obra_civil: false, ... } }
+router.put('/perfil', requireEscritura('checklist'), async (req, res) => {
+  try {
+    const respuestas = await checklistService.guardarRespuestas(req.params.proyectoId, req.body?.respuestas);
+    res.json({ respuestas });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // PATCH /api/empresas/:empresaId/proyectos/:proyectoId/checklist/:itemId
 router.patch('/:itemId', requireEscritura('checklist'), async (req, res) => {
   try {
