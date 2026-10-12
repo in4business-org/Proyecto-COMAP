@@ -1,0 +1,17 @@
+# Base de datos SOLO para desarrollo local. Nunca apuntar esto a producción.
+#   docker compose -f docker-compose.local.yml up -d
+#   DATABASE_URL=postgresql://gpc:gpc@localhost:5433/gpc_local
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: gpc
+      POSTGRES_PASSWORD: gpc
+      POSTGRES_DB: gpc_local
+    ports:
+      - "5433:5432"
+    volumes:
+      - gpc_local_data:/var/lib/postgresql/data
+
+volumes:
+  gpc_local_data:
