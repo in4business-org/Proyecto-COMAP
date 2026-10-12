@@ -1,354 +1,385 @@
-import { useEffect, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Save, Plus, ArrowUpRight, Settings } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { useParams, Link, useSearchParams, useNavigate } from 'react-router-dom'
+import {
+  AlertTriangle, ArrowRight, ClipboardCheck, FolderOpen, Plus, ReceiptText, Settings, Users,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { LoadingState, Spinner } from '@/components/ui/loading'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Card } from '@/components/ui/card'
+import { LoadingState, EmptyState } from '@/components/ui/loading'
+import { ResumenInversion } from '@/components/inversion/ResumenInversion'
 import { cn } from '@/lib/utils'
-import { empresas as empApi, proyectos as projApi } from '@/lib/api'
-import { fmtFecha } from '@/lib/fechas'
+import { empresas as empApi, proyectos as projApi, checklist as checkApi, cotizaciones as cotApi } from '@/lib/api'
+import { anioDe } from '@/lib/fechas'
+import { calcularResumen } from '@/lib/inversion'
+import { periodosDeProyecto, etiquetaPeriodo } from '@/lib/proyecto'
+import { revisarComprobantes } from '@/lib/revision'
+import { datosFaltantes, iniciales } from '@/lib/empresa'
+import { avisarCambio } from '@/lib/eventos'
 import { useAuth } from '../context/AuthContext'
+import { useComprobantes } from './proyecto/useComprobantes'
+import { DatosEmpresaDialog } from './empresa/DatosEmpresaDialog'
+import { NuevoProyectoDialog, ConfigurarProyectoDialog } from './empresa/ProyectoDialogs'
+import { SimuladorDialog } from './empresa/SimuladorDialog'
 
-const FIELDS = [
-  { key: 'razon_social', label: 'Razón Social', span: 1 },
-  { key: 'rut', label: 'RUT', span: 1, readonly: true },
-  { key: 'domicilio_constituido', label: 'Domicilio Constituido', span: 1 },
-  { key: 'domicilio_fiscal', label: 'Domicilio Fiscal', span: 1 },
-  { key: 'telefono', label: 'Teléfono', span: 1 },
-  { key: 'email', label: 'Email', span: 1 },
-  { key: 'giro', label: 'Giro', span: 1 },
-  { key: 'codigo_ciiu', label: 'Código CIIU', span: 1 },
-  { key: 'fecha_balance', label: 'Fecha de próximo balance', span: 1, type: 'date' },
-  { key: 'tipo_contribuyente', label: 'Tipo de Contribuyente', span: 1 },
-]
+const titulo = 'text-[11px] font-semibold uppercase tracking-widest text-muted-foreground'
+
+/** Proyecto que se muestra si la URL no dice cuál: el más nuevo */
+function proyectoPorDefecto(proyectos) {
+  return [...proyectos].sort((a, b) =>
+    (b.anio_presentacion || 0) - (a.anio_presentacion || 0) ||
+    String(b.fecha_creacion || '').localeCompare(String(a.fecha_creacion || ''))
+  )[0]
+}
+
+function nombreProyecto(p) {
+  return p.expediente ? `Expediente ${p.expediente}` : `Proyecto ${p.anio_presentacion || ''}`.trim()
+}
+
+function Progreso({ valor, total, className }) {
+  const pct = total > 0 ? Math.round((valor / total) * 100) : 0
+  return (
+    <div className="h-1.5 rounded-full bg-muted overflow-hidden" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+      <div className={cn('h-full rounded-full transition-all', className)} style={{ width: `${pct}%` }} />
+    </div>
+  )
+}
+
+/** Acceso grande a un paso: checklist o comprobantes */
+function PasoCard({ to, icono: Icono, iconoClass, badge, titulo: t, descripcion, progreso, resumen, destacada }) {
+  return (
+    <Link
+      to={to}
+      className={cn(
+        'group flex flex-col gap-4 rounded-xl border bg-card p-5 shadow-sm transition-colors hover:border-primary/50',
+        destacada ? 'border-primary/60' : 'border-border'
+      )}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <span className={cn('flex size-10 items-center justify-center rounded-lg', iconoClass)}>
+          <Icono size={20} strokeWidth={1.8} aria-hidden="true" />
+        </span>
+        {badge}
+      </div>
+      <div>
+        <h3 className="text-lg font-medium">{t}</h3>
+        <p className="text-sm text-muted-foreground">{descripcion}</p>
+      </div>
+      <div className="mt-auto space-y-2.5">
+        {progreso}
+        <div className="flex items-end justify-between gap-2 text-[12px] text-muted-foreground">
+          <span className="line-clamp-2">{resumen}</span>
+          <span className="flex items-center gap-1 font-medium text-primary shrink-0">
+            Abrir <ArrowRight size={13} className="transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+          </span>
+        </div>
+      </div>
+    </Link>
+  )
+}
+
+/** Acceso secundario: plan de ejecución, simulador */
+function AccesoSecundario({ titulo: t, descripcion, ...props }) {
+  const Comp = props.to ? Link : 'button'
+  return (
+    <Comp
+      type={props.to ? undefined : 'button'}
+      {...props}
+      className="flex w-full items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3.5 text-left shadow-sm transition-colors hover:border-primary/50 cursor-pointer"
+    >
+      <span>
+        <span className="block text-sm font-medium">{t}</span>
+        <span className="block text-[12px] text-muted-foreground">{descripcion}</span>
+      </span>
+      <ArrowRight size={14} className="text-primary shrink-0" aria-hidden="true" />
+    </Comp>
+  )
+}
 
 export default function EmpresaDetail() {
   const { empresaId } = useParams()
-  // Permisos de escritura sobre esta empresa; el backend revalida igual
-  const { puedeEscribir } = useAuth()
+  const navigate = useNavigate()
+  const [params, setParams] = useSearchParams()
+  const { puedeEscribir, isAdmin } = useAuth()
   const puedeEditarEmpresa = puedeEscribir(empresaId, 'empresa')
   const puedeEditarProyectos = puedeEscribir(empresaId, 'proyectos')
-  const [empresa, setEmpresa] = useState(null)
-  const [form, setForm] = useState({})
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [proyectos, setProyectos] = useState([])
-  const [projLoading, setProjLoading] = useState(true)
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [creating, setCreating] = useState(false)
-  const [projForm, setProjForm] = useState({ anio: new Date().getFullYear(), duracion: 5, fecha: '' })
 
-  const [activeTab, setActiveTab] = useState('proyectos')
-  const [configProj, setConfigProj] = useState(null)
-  const [configForm, setConfigForm] = useState({})
-  const [savingConfig, setSavingConfig] = useState(false)
+  const [empresa, setEmpresa] = useState(null)
+  const [proyectos, setProyectos] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [checklist, setChecklist] = useState(null)
+  const [cotizacion, setCotizacion] = useState(null)
+  const [dialogo, setDialogo] = useState(null) // 'datos' | 'nuevo' | 'simulador'
+  const [configurando, setConfigurando] = useState(null)
+
+  const cargarProyectos = () => projApi.list(empresaId).then(setProyectos)
 
   useEffect(() => {
-    empApi.get(empresaId).then((e) => { setEmpresa(e); setForm(e) }).catch(console.error).finally(() => setLoading(false))
-    projApi.list(empresaId).then(setProyectos).catch(console.error).finally(() => setProjLoading(false))
+    setLoading(true)
+    Promise.all([
+      empApi.get(empresaId).then(setEmpresa),
+      cargarProyectos(),
+    ]).catch(console.error).finally(() => setLoading(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [empresaId])
 
-  const handleSave = async () => {
-    setSaving(true)
-    try { await empApi.update(empresaId, form); setEmpresa({ ...form }) }
-    catch (err) { console.error(err) }
-    finally { setSaving(false) }
-  }
+  const proyecto = proyectos.find((p) => p.id === params.get('proyecto')) || proyectoPorDefecto(proyectos)
+  const periodos = useMemo(() => periodosDeProyecto(proyecto), [proyecto])
+  const periodo = periodos.includes(params.get('periodo')) ? params.get('periodo') : 'presentacion'
 
-  const handleCreateProj = async () => {
-    setCreating(true)
-    try {
-      const newProj = await projApi.create(empresaId, projForm.anio, projForm.duracion, projForm.fecha || null)
-      setDialogOpen(false)
-      setProyectos(prev => [...prev, newProj])
-      setProjForm({ anio: new Date().getFullYear(), duracion: 5, fecha: '' })
-    } catch (err) {
-      console.error(err)
-      projApi.list(empresaId).then(setProyectos).catch(console.error)
+  const elegir = (cambios) => {
+    const next = new URLSearchParams(params)
+    for (const [k, v] of Object.entries(cambios)) {
+      if (v) next.set(k, v)
+      else next.delete(k)
     }
-    finally { setCreating(false) }
+    setParams(next, { replace: true })
   }
 
-  const handleOpenConfig = (p) => {
-    setConfigForm({
-      fecha_presentacion: p.fecha_presentacion || '',
-      anio_presentacion: p.anio_presentacion || '',
-      duracion_seguimiento: p.duracion_seguimiento ?? 1,
-    })
-    setConfigProj(p)
-  }
+  // Checklist y cotización del proyecto elegido
+  useEffect(() => {
+    if (!proyecto?.id) return
+    setChecklist(null)
+    checkApi.get(empresaId, proyecto.id).then(setChecklist).catch(() => setChecklist([]))
+  }, [empresaId, proyecto?.id])
 
-  const handleSaveConfig = async () => {
-    setSavingConfig(true)
-    try {
-      await projApi.updateMetadata(empresaId, configProj.id, {
-        fecha_presentacion: configForm.fecha_presentacion || null,
-        anio_presentacion: configForm.anio_presentacion ? Number(configForm.anio_presentacion) : null,
-        duracion_seguimiento: Number(configForm.duracion_seguimiento),
-      })
-      setProyectos(prev => prev.map(p =>
-        p.id === configProj.id
-          ? { ...p, ...configForm, anio_presentacion: Number(configForm.anio_presentacion), duracion_seguimiento: Number(configForm.duracion_seguimiento) }
-          : p
-      ))
-      setConfigProj(null)
-    } catch (err) { console.error(err) }
-    finally { setSavingConfig(false) }
-  }
+  useEffect(() => {
+    if (!proyecto?.id) return
+    cotApi.getMesAnterior(proyecto.fecha_presentacion || null).then(setCotizacion).catch(() => setCotizacion(null))
+  }, [proyecto?.id, proyecto?.fecha_presentacion])
+
+  const { comprobantes } = useComprobantes(empresaId, proyecto?.id, periodos, periodo)
+
+  const revision = useMemo(() => revisarComprobantes(comprobantes, empresa?.rut).totales, [comprobantes, empresa?.rut])
+  const resumen = useMemo(() => calcularResumen(comprobantes, cotizacion, anioDe), [comprobantes, cotizacion])
 
   if (loading) return <LoadingState />
+  if (!empresa) return <EmptyState icon={FolderOpen} title="No encontramos la empresa" description="Puede que no tengas acceso o que se haya borrado." />
 
-  const hasChanges = JSON.stringify(form) !== JSON.stringify(empresa)
+  const faltan = datosFaltantes(empresa)
+  const base = proyecto ? `/empresas/${empresaId}/proyectos/${proyecto.id}` : ''
+  const conPeriodo = (extra = {}) => {
+    const q = new URLSearchParams({ ...(periodo !== 'presentacion' ? { periodo } : {}), ...extra })
+    const qs = q.toString()
+    return `${base}${qs ? `?${qs}` : ''}`
+  }
+
+  const aplicables = (checklist || []).filter((i) => i.estado !== 'no_aplica')
+  const listos = aplicables.filter((i) => i.estado === 'completado').length
+  const siguiente = aplicables.find((i) => i.estado === 'pendiente')
+  const checklistCompleto = checklist && aplicables.length > 0 && listos === aplicables.length
 
   return (
-    <div className="animate-fade-up">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <div className="flex items-center gap-3">
-          <Link to="/empresas" className="rounded-md p-1.5 hover:bg-accent transition-colors text-muted-foreground hover:text-foreground">
-            <ArrowLeft size={16} />
-          </Link>
-          <div>
-            <h1 className="text-xl font-medium truncate">{empresa?.nombre}</h1>
-            <p className="text-xs text-muted-foreground">{empresa?.rut}</p>
+    <div className="animate-fade-up space-y-7">
+      {/* Encabezado */}
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3 min-w-0">
+          <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground font-semibold">
+            {iniciales(empresa.nombre)}
+          </span>
+          <div className="min-w-0">
+            <h1 className="text-xl font-medium truncate">{empresa.nombre}</h1>
+            <p className="text-[13px] text-muted-foreground truncate">
+              <span className="font-mono">{empresa.rut}</span>
+              {empresa.tipo_contribuyente && ` · ${empresa.tipo_contribuyente}`}
+            </p>
           </div>
         </div>
-        {puedeEditarProyectos && (
-          <Button onClick={() => setDialogOpen(true)} size="sm" className="gap-1.5 text-xs">
-            <Plus size={12} />
-            Nuevo proyecto
-          </Button>
-        )}
-      </div>
-
-      {/* Tabs Menu */}
-      <div className="flex gap-1.5 border-b border-border/50 pb-0 mb-6 px-1">
-        {[
-          { id: 'proyectos', label: 'Proyectos' },
-          { id: 'metadata', label: 'Datos de empresa' },
-        ].map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setActiveTab(t.id)}
-            className={cn(
-              'px-4 py-2.5 text-[13px] font-medium transition-all mb-[-1px] border-b-2',
-              activeTab === t.id
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/30'
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Proyectos Tab */}
-      {activeTab === 'proyectos' && (
-        <section className="bg-card/30 border border-border/50 rounded-xl p-5 md:p-6 animate-fade-in shadow-sm">
-          <div className="mb-4">
-            <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Proyectos Asociados</h2>
-          </div>
-
-          {projLoading ? (
-            <LoadingState message="Cargando proyectos..." />
-          ) : proyectos.length === 0 ? (
-            <div className="border border-dashed border-border rounded-lg py-12 text-center bg-card/10">
-              <p className="text-sm text-muted-foreground">No hay proyectos aún.</p>
-              <button onClick={() => setDialogOpen(true)} className="text-sm font-medium text-primary hover:underline mt-2 cursor-pointer transition-colors">
-                Crear el primer proyecto
-              </button>
-            </div>
-          ) : (
-            <div className="border border-border/80 rounded-lg overflow-x-auto shadow-sm">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border/80 bg-muted/40 text-left">
-                    {['Fecha creación', 'Fecha presentación', 'Expediente', 'Año', 'Seguimiento', ''].map((h) => (
-                      <th key={h} className="px-4 py-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap">
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/60">
-                  {proyectos.map((p) => {
-                    const hasDocs = !!p.expediente
-                    return (
-                      <tr key={p.id} className="bg-card hover:bg-accent/40 transition-colors group">
-                        <td className="px-4 py-3 text-[13px] text-muted-foreground/80 whitespace-nowrap">
-                          {fmtFecha(p.fecha_creacion)}
-                        </td>
-                        <td className="px-4 py-3 text-[13px] text-muted-foreground/80 whitespace-nowrap">
-                          {p.fecha_presentacion || '--'}
-                        </td>
-                        <td className="px-4 py-3 text-[13px] whitespace-nowrap">
-                          {hasDocs ? (
-                            <Badge variant="secondary" className="bg-success/15 text-success hover:bg-success/25 border-success/20 font-medium">
-                              {p.expediente}
-                            </Badge>
-                          ) : (
-                            <Badge variant="secondary" className="bg-warning/15 text-warning hover:bg-warning/25 border-warning/20 font-medium">
-                              Sin expediente
-                            </Badge>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-[13px] text-muted-foreground whitespace-nowrap">
-                          {p.anio_presentacion}
-                        </td>
-                        <td className="px-4 py-3 text-[13px] text-muted-foreground whitespace-nowrap">
-                          {p.duracion_seguimiento} años
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            {puedeEditarProyectos && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => handleOpenConfig(p)}
-                                className="h-[28px] px-2 text-[11px] text-muted-foreground hover:text-foreground gap-1"
-                              >
-                                <Settings size={12} />
-                                Configurar
-                              </Button>
-                            )}
-                            <Link to={`/empresas/${empresaId}/proyectos/${p.id}`}>
-                              <Button size="sm" variant="secondary" className="h-[28px] px-3 text-[11px] font-medium gap-1 bg-background hover:bg-muted-foreground/10 text-foreground transition-all">
-                                Abrir <ArrowUpRight size={12} className="opacity-50" />
-                              </Button>
-                            </Link>
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={() => setDialogo('datos')}>Datos de la empresa</Button>
+          {isAdmin && (
+            <Button variant="outline" size="sm" onClick={() => navigate('/admin')}>
+              <Users size={14} aria-hidden="true" /> Personas con acceso
+            </Button>
           )}
-        </section>
+          {puedeEditarProyectos && (
+            <Button size="sm" onClick={() => setDialogo('nuevo')}>
+              <Plus size={14} aria-hidden="true" /> Nuevo proyecto
+            </Button>
+          )}
+        </div>
+      </header>
+
+      {/* Datos que faltan */}
+      {faltan.length > 0 && (
+        <div className="flex flex-col gap-2 rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 sm:flex-row sm:items-center">
+          <AlertTriangle size={16} className="text-warning shrink-0" aria-hidden="true" />
+          <p className="flex-1 text-[13px]">
+            Faltan datos de la empresa: <strong className="font-semibold">{faltan.join(', ')}</strong>. Se usan para presentar.
+          </p>
+          {puedeEditarEmpresa && (
+            <button type="button" onClick={() => setDialogo('datos')} className="text-[13px] font-medium text-primary underline underline-offset-2 cursor-pointer self-start sm:self-auto">
+              Completar
+            </button>
+          )}
+        </div>
       )}
 
-      {/* Metadata Tab */}
-      {activeTab === 'metadata' && (
-        <section className="bg-card/30 border border-border/50 rounded-xl p-5 md:p-6 animate-fade-in shadow-sm">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Datos de la empresa</h2>
-            {hasChanges && puedeEditarEmpresa && (
-              <Button onClick={handleSave} disabled={saving} size="sm" className="h-[28px] text-[11px] gap-1.5 font-medium">
-                {saving ? <Spinner size={12} /> : <Save size={12} />}
-                Guardar cambios
-              </Button>
+      {proyectos.length === 0 ? (
+        <Card>
+          <EmptyState
+            icon={FolderOpen}
+            title="Todavía no hay proyectos"
+            description="Un proyecto es una presentación a la COMAP. Creá uno para empezar a juntar los documentos y los comprobantes."
+            action={puedeEditarProyectos && (
+              <Button size="sm" onClick={() => setDialogo('nuevo')}><Plus size={14} /> Crear el primer proyecto</Button>
             )}
-          </div>
+          />
+        </Card>
+      ) : (
+        <>
+          {/* Proyectos */}
+          <section aria-labelledby="t-proyectos" className="space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <h2 id="t-proyectos" className={titulo}>Proyectos</h2>
+              {puedeEditarProyectos && proyecto && (
+                <Button variant="ghost" size="sm" onClick={() => setConfigurando(proyecto)} className="h-8 text-[12px] text-muted-foreground">
+                  <Settings size={13} aria-hidden="true" /> Configurar proyecto
+                </Button>
+              )}
+            </div>
+            <div role="tablist" aria-label="Proyectos de la empresa" className="flex gap-2 overflow-x-auto pb-1">
+              {proyectos.map((p) => {
+                const activo = p.id === proyecto?.id
+                return (
+                  <button
+                    key={p.id}
+                    role="tab"
+                    aria-selected={activo}
+                    type="button"
+                    onClick={() => elegir({ proyecto: p.id, periodo: null })}
+                    className={cn(
+                      'shrink-0 rounded-xl border px-4 py-2.5 text-left transition-colors cursor-pointer',
+                      activo ? 'border-primary bg-card shadow-sm' : 'border-border bg-card/50 hover:bg-card'
+                    )}
+                  >
+                    <span className="block text-sm font-medium">{nombreProyecto(p)}</span>
+                    <span className="block text-[12px] text-muted-foreground">
+                      Presentación {p.anio_presentacion || 'sin año'} · {p.duracion_seguimiento || 0} años de control
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </section>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 gap-y-5">
-            {FIELDS.map(({ key, label, span, readonly, type }) => (
-              <div key={key} className={span === 2 ? 'col-span-1 md:col-span-2' : ''}>
-                <label htmlFor={`field-${key}`} className="text-[11px] font-medium text-muted-foreground/80 mb-1.5 block">
-                  {label}
-                </label>
-                <Input
-                  id={`field-${key}`}
-                  type={type || 'text'}
-                  readOnly={readonly}
-                  value={form[key] || ''}
-                  onChange={(e) => setForm({ ...form, [key]: e.target.value })}
-                  className={cn("h-9 text-[13px] bg-background border-border/50", readonly && "opacity-60 cursor-not-allowed text-muted-foreground")}
-                  placeholder={type === 'date' ? undefined : `Ingrese ${label.toLowerCase()}`}
-                />
-              </div>
-            ))}
-          </div>
-        </section>
+          {/* Períodos */}
+          <Card className="flex flex-wrap items-center gap-2 px-4 py-3">
+            <span className="text-[13px] text-muted-foreground mr-1">Período:</span>
+            {periodos.map((p) => {
+              const activo = p === periodo
+              return (
+                <button
+                  key={p}
+                  type="button"
+                  aria-pressed={activo}
+                  onClick={() => elegir({ periodo: p === 'presentacion' ? null : p })}
+                  className={cn(
+                    'rounded-md border px-2.5 py-1 text-[12px] font-medium transition-colors cursor-pointer',
+                    activo ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:bg-accent'
+                  )}
+                >
+                  {etiquetaPeriodo(p, proyecto)}
+                </button>
+              )
+            })}
+            <span className="w-full sm:w-auto sm:ml-auto text-[12px] text-muted-foreground">
+              La presentación y cada año de control tienen sus propios comprobantes
+            </span>
+          </Card>
+
+          {/* Accesos */}
+          <section aria-label="Entrar a" className="grid gap-3 lg:grid-cols-[1fr_1fr_minmax(0,0.9fr)]">
+            <PasoCard
+              to={`${base}?checklist=1`}
+              icono={ClipboardCheck}
+              iconoClass="bg-accent text-primary"
+              destacada={!checklistCompleto}
+              badge={checklistCompleto
+                ? <Badge variant="success">Completo</Badge>
+                : <Badge>Empezá por acá</Badge>}
+              titulo="1 · Checklist de documentos"
+              descripcion="Los papeles de la empresa que pide el Ministerio"
+              progreso={<Progreso valor={listos} total={aplicables.length} className="bg-primary" />}
+              resumen={!checklist
+                ? 'Cargando...'
+                : `${listos} de ${aplicables.length} listos${siguiente ? ' · sigue: ' + siguiente.descripcion : ''}`}
+            />
+            <PasoCard
+              to={conPeriodo()}
+              icono={ReceiptText}
+              iconoClass="bg-warning/15 text-warning"
+              badge={revision.revisar > 0 && <Badge variant="warning">{revision.revisar} para revisar</Badge>}
+              titulo="2 · Comprobantes de inversión"
+              descripcion="Facturas y presupuestos de lo que se invierte"
+              progreso={<Progreso valor={revision.listo} total={revision.total} className="bg-warning" />}
+              resumen={revision.total === 0
+                ? 'Todavía no hay comprobantes cargados'
+                : `${revision.total} cargados · ${revision.listo} listos${revision.sin_archivo ? ` · ${revision.sin_archivo} sin archivo` : ''}`}
+            />
+            <div className="flex flex-col gap-3">
+              <AccesoSecundario to={conPeriodo({ vista: 'plan' })} titulo="Plan de ejecución" descripcion="Qué se invierte en cada año" />
+              <AccesoSecundario onClick={() => setDialogo('simulador')} titulo="Simulador de beneficios" descripcion="Cuánto podría exonerar la empresa" />
+            </div>
+          </section>
+
+          {/* Resumen de la inversión */}
+          <section aria-labelledby="t-resumen" className="space-y-3">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <h2 id="t-resumen" className={titulo}>Resumen de la inversión · {etiquetaPeriodo(periodo, proyecto)}</h2>
+              {cotizacion && (
+                <span className="text-[12px] text-muted-foreground" title="UI = Unidades Indexadas, la unidad que usa la COMAP">
+                  En UI · cotización al {cotizacion.fecha}
+                </span>
+              )}
+            </div>
+            {resumen ? (
+              <ResumenInversion resumen={resumen} onCategoria={(cat) => navigate(conPeriodo({ categoria: cat }))} />
+            ) : (
+              <Card className="px-4 py-8 text-center text-[13px] text-muted-foreground">
+                {revision.total === 0
+                  ? 'Cuando cargues comprobantes vas a ver acá cuánto se invierte, por año y por categoría.'
+                  : 'No pudimos traer la cotización del BCU, así que no podemos pasar los montos a UI. Probá más tarde.'}
+              </Card>
+            )}
+          </section>
+        </>
       )}
 
-      {/* Dialog configurar proyecto */}
-      <Dialog open={!!configProj} onClose={() => setConfigProj(null)}>
-        <DialogContent onClose={() => setConfigProj(null)}>
-          <DialogHeader>
-            <DialogTitle>Configuración del proyecto</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <label htmlFor="config-fecha" className="text-[12px] font-medium text-foreground">Fecha de presentación</label>
-              <Input
-                id="config-fecha"
-                type="date"
-                value={configForm.fecha_presentacion || ''}
-                onChange={(e) => {
-                  const fecha = e.target.value
-                  const anio = fecha ? new Date(fecha).getFullYear() : configForm.anio_presentacion
-                  setConfigForm(f => ({ ...f, fecha_presentacion: fecha, anio_presentacion: anio || '' }))
-                }}
-                className="h-9 text-[13px]"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <label htmlFor="config-anio" className="text-[12px] font-medium text-foreground">Año de presentación</label>
-                <Input
-                  id="config-anio"
-                  type="number"
-                  value={configForm.anio_presentacion || ''}
-                  onChange={(e) => setConfigForm(f => ({ ...f, anio_presentacion: e.target.value }))}
-                  className="h-9 text-[13px]"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label htmlFor="config-duracion" className="text-[12px] font-medium text-foreground">Años de seguimiento</label>
-                <Input
-                  id="config-duracion"
-                  type="number"
-                  min="0"
-                  max="10"
-                  value={configForm.duracion_seguimiento ?? ''}
-                  onChange={(e) => setConfigForm(f => ({ ...f, duracion_seguimiento: e.target.value }))}
-                  className="h-9 text-[13px]"
-                />
-              </div>
-            </div>
-          </div>
-          <DialogFooter className="mt-2">
-            <Button variant="ghost" onClick={() => setConfigProj(null)} size="sm" className="h-9 text-xs">Cancelar</Button>
-            <Button onClick={handleSaveConfig} disabled={savingConfig} size="sm" className="h-9 text-xs">
-              {savingConfig ? <><Spinner size={12} className="mr-1.5" /> Guardando...</> : 'Guardar'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Dialog */}
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)}>
-        <DialogContent onClose={() => setDialogOpen(false)}>
-          <DialogHeader>
-            <DialogTitle>Nuevo proyecto COMAP</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <label htmlFor="proj-fecha" className="text-[12px] font-medium text-foreground">Fecha de presentación</label>
-              <Input id="proj-fecha" type="date" value={projForm.fecha} onChange={(e) => setProjForm({ ...projForm, fecha: e.target.value })} className="h-9 text-[13px]" />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <label htmlFor="proj-anio" className="text-[12px] font-medium text-foreground">Año de presentación</label>
-                <Input id="proj-anio" type="number" value={projForm.anio} onChange={(e) => setProjForm({ ...projForm, anio: parseInt(e.target.value) })} className="h-9 text-[13px]" />
-              </div>
-              <div className="space-y-1.5">
-                <label htmlFor="proj-duracion" className="text-[12px] font-medium text-foreground">Años seguimiento</label>
-                <Input id="proj-duracion" type="number" min="1" max="10" value={projForm.duracion} onChange={(e) => setProjForm({ ...projForm, duracion: parseInt(e.target.value) })} className="h-9 text-[13px]" />
-              </div>
-            </div>
-          </div>
-          <DialogFooter className="mt-2">
-            <Button variant="ghost" onClick={() => setDialogOpen(false)} size="sm" className="h-9 text-xs">Cancelar</Button>
-            <Button onClick={handleCreateProj} disabled={creating} size="sm" className="h-9 text-xs">
-              {creating ? 'Creando...' : 'Crear proyecto'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <DatosEmpresaDialog
+        open={dialogo === 'datos'}
+        onClose={() => setDialogo(null)}
+        empresa={empresa}
+        puedeEditar={puedeEditarEmpresa}
+        onGuardado={(e) => { setEmpresa(e); avisarCambio('empresas') }}
+      />
+      <NuevoProyectoDialog
+        open={dialogo === 'nuevo'}
+        onClose={() => setDialogo(null)}
+        empresaId={empresaId}
+        onCreado={(id) => {
+          avisarCambio('proyectos', empresaId)
+          cargarProyectos().then(() => elegir({ proyecto: id, periodo: null }))
+        }}
+      />
+      <ConfigurarProyectoDialog
+        proyecto={configurando}
+        onClose={() => setConfigurando(null)}
+        empresaId={empresaId}
+        onGuardado={(p) => {
+          setProyectos((prev) => prev.map((x) => (x.id === p.id ? p : x)))
+          avisarCambio('proyectos', empresaId)
+        }}
+      />
+      {proyecto && (
+        <SimuladorDialog
+          open={dialogo === 'simulador'}
+          onClose={() => setDialogo(null)}
+          empresaId={empresaId}
+          proyectoId={proyecto.id}
+          puedeEditar={puedeEscribir(empresaId, 'simulador')}
+        />
+      )}
     </div>
   )
 }

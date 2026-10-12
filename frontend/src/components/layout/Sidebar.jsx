@@ -19,6 +19,7 @@ import {
 import { useState, useEffect } from 'react'
 import { empresas as empApi, proyectos as projApi } from '@/lib/api'
 import { etiquetaProyecto } from '@/lib/proyecto'
+import { escucharCambios } from '@/lib/eventos'
 import { useTheme } from '../../context/ThemeContext'
 import { useAuth } from '../../context/AuthContext'
 
@@ -81,6 +82,21 @@ export function Sidebar() {
       }
     }
   }, [location.pathname, proyectosMap])
+
+  // Otra pantalla creó o cambió algo: volver a pedir lo que corresponda
+  useEffect(() => escucharCambios(({ tipo, id }) => {
+    if (tipo === 'proyectos' && id) {
+      projApi.list(id).then(projs => setProyectosMap(prev => ({ ...prev, [id]: projs }))).catch(console.error)
+    }
+    if (tipo === 'empresas') {
+      clearEmpresasCache()
+      empApi.list().then(data => {
+        empresasCache = data
+        empresasCacheTime = Date.now()
+        setEmpresas(data)
+      }).catch(console.error)
+    }
+  }), [])
 
   const handleLogout = async () => {
     try {
