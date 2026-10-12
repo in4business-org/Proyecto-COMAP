@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/dialog'
 import { admin as adminApi, empresas as empApi } from '@/lib/api'
 import { AccesosDialog } from '@/components/admin/AccesosDialog'
+import { fmtFecha } from '@/lib/fechas'
 import { useAuth } from '../context/AuthContext'
 
 const ROL_LABEL = {
@@ -40,15 +41,6 @@ const ESTADO_LABEL = {
   FORCE_CHANGE_PASSWORD: 'Contraseña pendiente',
   RESET_REQUIRED: 'Reset pendiente',
   UNCONFIRMED: 'Sin confirmar',
-}
-
-function formatFecha(value) {
-  if (!value) return '--'
-  return new Date(value).toLocaleDateString('es-UY', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  })
 }
 
 /** Muestra una contraseña temporal con botón de copiar. */
@@ -366,7 +358,7 @@ export default function Admin() {
                     </td>
 
                     <td className="px-4 py-3 text-[12.5px] text-muted-foreground hidden lg:table-cell">
-                      {formatFecha(u.creado)}
+                      {fmtFecha(u.creado)}
                     </td>
 
                     <td className="px-4 py-3">

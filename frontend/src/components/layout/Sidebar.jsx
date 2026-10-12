@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { empresas as empApi, proyectos as projApi } from '@/lib/api'
+import { etiquetaProyecto } from '@/lib/proyecto'
 import { useTheme } from '../../context/ThemeContext'
 import { useAuth } from '../../context/AuthContext'
 
@@ -334,10 +335,7 @@ export function Sidebar() {
                         <span className="text-[11px] text-muted-foreground/40 py-1 px-1">Sin proyectos</span>
                       ) : (
                         proyectosMap[emp.id].map(p => {
-                          const label = p.expediente
-                            || p.fecha_presentacion
-                            || p.fecha_creacion
-                            || `Proyecto ${p.anio_presentacion}`
+                          const label = etiquetaProyecto(p)
                           const isProjActive = location.pathname === `/empresas/${emp.id}/proyectos/${p.id}`
                           return (
                             <NavLink

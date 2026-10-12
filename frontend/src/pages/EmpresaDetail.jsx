@@ -8,6 +8,7 @@ import { LoadingState, Spinner } from '@/components/ui/loading'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { empresas as empApi, proyectos as projApi } from '@/lib/api'
+import { fmtFecha } from '@/lib/fechas'
 import { useAuth } from '../context/AuthContext'
 
 const FIELDS = [
@@ -177,7 +178,7 @@ export default function EmpresaDetail() {
                     return (
                       <tr key={p.id} className="bg-card hover:bg-accent/40 transition-colors group">
                         <td className="px-4 py-3 text-[13px] text-muted-foreground/80 whitespace-nowrap">
-                          {p.fecha_creacion ? new Date(p.fecha_creacion).toLocaleDateString() : '--'}
+                          {fmtFecha(p.fecha_creacion)}
                         </td>
                         <td className="px-4 py-3 text-[13px] text-muted-foreground/80 whitespace-nowrap">
                           {p.fecha_presentacion || '--'}
