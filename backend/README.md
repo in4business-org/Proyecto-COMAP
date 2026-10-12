@@ -1,37 +1,16 @@
-# backend
+# GPC · backend
 
-## Description
-
-
-
-## Installation
+Node + Express 5 + Prisma (PostgreSQL). Autenticación con Cognito, archivos en S3,
+lectura de facturas con Gemini.
 
 ```bash
-$ npm install
+npm install          # corre también prisma generate
+npm run dev          # nodemon
+npm start
+npm test             # permisos, admin de empresa y rutas (sin base ni AWS)
 ```
 
-## Running the app
+Variables: ver [.env.example](.env.example). Alta de usuarios y grupos: [ADMIN_SETUP.md](ADMIN_SETUP.md).
 
-```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-npm run start:prod
-```
-
-## Test
-
-```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
-```
+Estructura: `src/modules/<módulo>/{*.routes,*.service}.js`, middleware de permisos en
+`src/middleware/`, constantes compartidas en `src/common/`.
