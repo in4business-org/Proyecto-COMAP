@@ -10,6 +10,7 @@ const Dashboard = lazy(() => import('./pages/Dashboard'))
 const Empresas = lazy(() => import('./pages/Empresas'))
 const EmpresaDetail = lazy(() => import('./pages/EmpresaDetail'))
 const ProyectoDetail = lazy(() => import('./pages/ProyectoDetail'))
+const ChecklistProyecto = lazy(() => import('./pages/ChecklistProyecto'))
 const UserSettings = lazy(() => import('./pages/UserSettings'))
 const OrgSettings = lazy(() => import('./pages/OrgSettings'))
 const InboxPage = lazy(() => import('./pages/Inbox'))
@@ -31,6 +32,7 @@ export default function App() {
               <Route path="/empresas" element={<Empresas />} />
               <Route path="/empresas/:empresaId" element={<EmpresaDetail />} />
               <Route path="/empresas/:empresaId/proyectos/:proyectoId" element={<ProyectoDetail />} />
+              <Route path="/empresas/:empresaId/proyectos/:proyectoId/checklist" element={<ChecklistProyecto />} />
               <Route path="/inbox" element={<InboxPage />} />
               <Route path="/settings/user" element={<UserSettings />} />
               <Route path="/settings/organization" element={<OrgSettings />} />

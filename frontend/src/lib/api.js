@@ -171,6 +171,14 @@ export const checklist = {
   },
   downloadFile: (empresaId, proyectoId, itemId) =>
     request(`/empresas/${empresaId}/proyectos/${proyectoId}/checklist/${itemId}/archivo`),
+  // Preguntas de "Antes de empezar" y sus respuestas
+  getPerfil: (empresaId, proyectoId) =>
+    request(`/empresas/${empresaId}/proyectos/${proyectoId}/checklist/perfil`),
+  setPerfil: (empresaId, proyectoId, respuestas) =>
+    request(`/empresas/${empresaId}/proyectos/${proyectoId}/checklist/perfil`, {
+      method: 'PUT',
+      body: JSON.stringify({ respuestas }),
+    }),
 };
 
 // -- Cotizaciones

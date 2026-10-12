@@ -1,23 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useParams, Link, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, CheckSquare, X } from 'lucide-react'
+import { useParams, Link, useSearchParams, Navigate } from 'react-router-dom'
+import { ArrowLeft, CheckSquare } from 'lucide-react'
 import { LoadingState } from '@/components/ui/loading'
-import { cn } from '@/lib/utils'
 import { empresas as empApi, proyectos as projApi } from '@/lib/api'
 import { fmtFecha } from '@/lib/fechas'
 import { periodosDeProyecto } from '@/lib/proyecto'
 import { Comprobantes } from './proyecto/Comprobantes'
-import { ChecklistPanel } from './proyecto/ChecklistPanel'
 
 export default function ProyectoDetail() {
   const { empresaId, proyectoId } = useParams()
-  // La pantalla de empresa entra con ?checklist=1, ?periodo=, ?vista=plan o ?categoria=
+  // La pantalla de empresa entra con ?periodo=, ?vista=plan o ?categoria=
   const [params, setParams] = useSearchParams()
   const [empresa, setEmpresa] = useState(null)
   const [meta, setMeta] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [checklistOpen, setChecklistOpen] = useState(params.get('checklist') === '1')
-  const [checklistPendientes, setChecklistPendientes] = useState(null)
 
   useEffect(() => {
     Promise.all([
@@ -31,6 +27,8 @@ export default function ProyectoDetail() {
 
   const periodos = useMemo(() => periodosDeProyecto(meta), [meta])
 
+  // El checklist antes era un panel lateral: los links viejos van a su pantalla
+  if (params.get('checklist') === '1') return <Navigate to={`/empresas/${empresaId}/proyectos/${proyectoId}/checklist`} replace />
   if (loading) return <LoadingState />
 
   const titulo = meta?.expediente || meta?.fecha_presentacion || (meta?.fecha_creacion ? fmtFecha(meta.fecha_creacion) : 'Sin fecha')
@@ -52,18 +50,13 @@ export default function ProyectoDetail() {
               </p>
             </div>
           </div>
-          <button
-            onClick={() => setChecklistOpen(o => !o)}
+          <Link
+            to={`/empresas/${empresaId}/proyectos/${proyectoId}/checklist`}
             className="flex items-center gap-2 px-3 h-9 rounded-lg border border-border/60 bg-card hover:bg-accent hover:border-primary/40 transition-all text-[12px] font-medium text-muted-foreground hover:text-foreground shrink-0"
           >
             <CheckSquare size={14} strokeWidth={2} />
             Checklist
-            {checklistPendientes > 0 && (
-              <span className="bg-warning/20 text-warning text-[10px] rounded-full px-1.5 py-0.5 font-semibold leading-none">
-                {checklistPendientes}
-              </span>
-            )}
-          </button>
+          </Link>
         </div>
 
         <div className="pb-10">
@@ -85,24 +78,6 @@ export default function ProyectoDetail() {
         </div>
       </div>
 
-      <div className={cn(
-        'fixed top-0 right-0 h-screen w-[440px] z-50 bg-background border-l border-border shadow-2xl flex flex-col transition-transform duration-300',
-        checklistOpen ? 'translate-x-0' : 'translate-x-full'
-      )}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border/60 shrink-0">
-          <h2 className="text-[14px] font-semibold">Checklist presentación</h2>
-          <button
-            onClick={() => setChecklistOpen(false)}
-            aria-label="Cerrar checklist"
-            className="rounded-md p-1.5 hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
-          >
-            <X size={15} />
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto">
-          <ChecklistPanel empresaId={empresaId} proyectoId={proyectoId} onCountUpdate={setChecklistPendientes} />
-        </div>
-      </div>
     </>
   )
 }

@@ -291,7 +291,7 @@ export default function EmpresaDetail() {
           {/* Accesos */}
           <section aria-label="Entrar a" className="grid gap-3 lg:grid-cols-[1fr_1fr_minmax(0,0.9fr)]">
             <PasoCard
-              to={`${base}?checklist=1`}
+              to={`${base}/checklist`}
               icono={ClipboardCheck}
               iconoClass="bg-accent text-primary"
               destacada={!checklistCompleto}
