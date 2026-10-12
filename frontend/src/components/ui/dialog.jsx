@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
 import { X } from 'lucide-react'
 
@@ -26,7 +27,12 @@ function useFocusTrap(containerRef, active) {
   }, [active, containerRef])
 }
 
-export function Dialog({ open, onClose, children }) {
+const ANCHOS = {
+  md: 'max-w-lg',
+  lg: 'max-w-2xl',
+}
+
+export function Dialog({ open, onClose, size = 'md', children }) {
   const contentRef = useRef(null)
 
   useFocusTrap(contentRef, open)
@@ -46,30 +52,31 @@ export function Dialog({ open, onClose, children }) {
 
   if (!open) return null
 
-  // El contenedor scrollea y el centrado se hace en un hijo con min-h-full.
-  // Centrar directamente sobre un `fixed inset-0` recorta el diálogo por arriba
-  // y por abajo cuando es más alto que la ventana, y como el body queda con
-  // overflow:hidden mientras está abierto, esa parte se vuelve inalcanzable.
-  // Con min-h-full el contenido corto sigue quedando centrado igual que antes,
-  // y el largo crece hacia abajo y se puede scrollear.
+  // Va en un portal a <body>: las páginas entran con animate-fade-up, que deja
+  // un transform aplicado, y un `fixed` adentro de un elemento con transform se
+  // posiciona contra ese elemento y no contra la ventana. Por eso el diálogo
+  // quedaba cortado a la altura de la página y no tapaba el menú lateral.
   //
+  // El contenedor scrollea y el centrado se hace en un hijo con min-h-full: un
+  // diálogo más alto que la ventana crece hacia abajo y se puede scrollear.
   // El wrapper del centrado va con pointer-events-none para que los clics en el
-  // margen sigan llegando al overlay y cierren el diálogo, como hasta ahora.
-  return (
+  // margen lleguen al overlay y cierren el diálogo.
+  return createPortal(
     <div className="fixed inset-0 z-60 overflow-y-auto" role="dialog" aria-modal="true">
-      <div aria-hidden="true" className="fixed inset-0 bg-background" onClick={onClose} />
+      <div aria-hidden="true" className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
       <div className="relative z-10 flex min-h-full items-center justify-center p-4 pointer-events-none">
-        <div ref={contentRef} className="w-full max-w-lg animate-scale-in pointer-events-auto">
+        <div ref={contentRef} className={cn('w-full animate-scale-in pointer-events-auto', ANCHOS[size] || ANCHOS.md)}>
           {children}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 
 export function DialogContent({ className, children, onClose, ...props }) {
   return (
-    <div className={cn('rounded-xl ring-1 ring-border bg-card p-6 shadow-lg shadow-black/20', className)} {...props}>
+    <div className={cn('relative rounded-xl ring-1 ring-border bg-card p-5 sm:p-6 shadow-lg shadow-black/20', className)} {...props}>
       {onClose && (
         <button
           onClick={onClose}

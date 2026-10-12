@@ -440,8 +440,8 @@ export default function Admin() {
           <DialogHeader>
             <DialogTitle>Nuevo usuario</DialogTitle>
             <DialogDescription>
-              Se crea la cuenta en Cognito con una contraseña temporal. En el primer ingreso el
-              usuario define la definitiva.
+              Le creamos una cuenta con una contraseña temporal. La primera vez que entre, elige
+              la suya.
             </DialogDescription>
           </DialogHeader>
 
@@ -458,7 +458,7 @@ export default function Admin() {
           <div className="space-y-4">
             <div className="space-y-1.5">
               <label htmlFor="admin-email" className="text-xs font-medium text-muted-foreground">
-                Email
+                Mail
               </label>
               <Input
                 id="admin-email"
@@ -620,7 +620,7 @@ export default function Admin() {
           <DialogHeader>
             <DialogTitle>Eliminar usuario</DialogTitle>
             <DialogDescription>
-              Se borra la cuenta de Cognito de forma permanente y no se puede deshacer. Si sólo
+              Se borra la cuenta para siempre y no se puede deshacer. Si sólo
               querés sacarle el acceso, deshabilitala en lugar de borrarla.
             </DialogDescription>
           </DialogHeader>

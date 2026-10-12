@@ -111,8 +111,8 @@ export function AccesosDialog({ usuario, onClose, onGuardado }) {
   }
 
   return (
-    <Dialog open={!!usuario} onClose={onClose}>
-      <DialogContent onClose={onClose} className="max-w-2xl">
+    <Dialog open={!!usuario} onClose={onClose} size="lg">
+      <DialogContent onClose={onClose}>
         <DialogHeader>
           <DialogTitle>
             {esAdminEmpresa ? 'Empresas que administra' : 'Permisos'} de{' '}
