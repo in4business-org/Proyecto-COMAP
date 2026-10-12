@@ -3,7 +3,8 @@
  * Handles formats like "17.303,28" (Spanish) or "17303.28" (English).
  */
 function normalizarMonto(value) {
-  if (!value) return null;
+  if (value == null || value === '') return null;
+  if (typeof value === 'number') return value;
   let s = String(value).replace(/\s/g, '').replace(/\$/g, '');
   if (s.includes(',')) {
     s = s.replace(/\./g, '').replace(',', '.');

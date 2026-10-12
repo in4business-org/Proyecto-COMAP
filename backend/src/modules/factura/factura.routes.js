@@ -37,6 +37,13 @@ function getMimeType(filename) {
   return mimeMap[ext] || 'application/pdf';
 }
 
+/** Monto como número; 0 es un monto válido (antes se guardaba como null) */
+function aMonto(val) {
+  if (val == null || val === '') return null;
+  const n = parseFloat(val);
+  return Number.isNaN(n) ? null : n;
+}
+
 /**
  * Convierte un comprobante (de la IA, del Excel o editado en pantalla) a las
  * columnas de Factura. Si falta fecha de ejecución se usa la del comprobante.
@@ -49,7 +56,7 @@ function aFilaFactura(r) {
     proveedor: r.proveedor || null,
     rut: r.rut || null,
     fecha: toFechaDDMMYYYY(r.fecha),
-    monto: r.monto ? parseFloat(r.monto) : null,
+    monto: aMonto(r.monto),
     moneda: r.moneda || null,
     cantidad: r.cantidad ? parseInt(r.cantidad) : 1,
     categoria: r.categoria || null,
@@ -274,6 +281,7 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/excel', async (
       cotizacion_ui,
       fecha_cotizacion,
       fecha_presentacion: meta.fecha_presentacion,
+      anio_presentacion: meta.anio_presentacion,
       fecha_balance: fechaBalance,
     });
 
