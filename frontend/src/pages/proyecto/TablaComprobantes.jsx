@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Download, Check, Plus, RefreshCw, X } from 'lucide-react'
+import { Check, Plus, RefreshCw, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { LoadingState, Spinner } from '@/components/ui/loading'
@@ -46,11 +46,11 @@ const FILA_NUEVA = {
 }
 
 /**
- * Tabla de comprobantes de un período, con edición en planilla, orden,
- * exportación al cuadro COMAP y la cotización usada.
+ * Planilla de comprobantes de un período: edición celda por celda, orden y
+ * la cotización usada.
  */
 export function TablaComprobantes({
-  empresaId, proyectoId, periodo, empresa, comprobantes, cargando,
+  empresaId, proyectoId, periodo, comprobantes, cargando,
   cotizacion, cargandoCotizacion, puedeEditar, anioBase, opcionesEjercicio,
   categoria, onQuitarCategoria, onActualizar,
 }) {
@@ -59,7 +59,6 @@ export function TablaComprobantes({
   const [savingEdit, setSavingEdit] = useState(false)
   const [selectedRows, setSelectedRows] = useState([])
   const [reprocesando, setReprocesando] = useState(false)
-  const [exporting, setExporting] = useState(false)
   const [openDropdown, setOpenDropdown] = useState(null)
   const [sortField, setSortField] = useState('numero_factura')
   const [sortDir, setSortDir] = useState('desc')
@@ -160,22 +159,6 @@ export function TablaComprobantes({
 
   const handleAddRow = () => setEditedResults(current => [...current, { ...FILA_NUEVA }])
 
-  const handleExport = async () => {
-    if (!empresa?.fecha_balance) {
-      const ok = window.confirm('La empresa no tiene fecha de balance cargada.\n¿Querés continuar de todas formas?')
-      if (!ok) return
-    }
-    setExporting(true)
-    try {
-      const blob = await factApi.exportExcel(empresaId, proyectoId, periodo)
-      const a = document.createElement('a')
-      a.href = URL.createObjectURL(blob)
-      a.download = `comap_${periodo}.xlsx`
-      a.click()
-    } catch (err) { console.error(err) }
-    finally { setExporting(false) }
-  }
-
   const btn = 'h-[28px] text-[11px] gap-1.5'
   const cellEdit = 'p-0 border-r border-b border-border/25 last:border-r-0'
   const inputEdit = 'w-full min-h-[34px] bg-transparent text-foreground px-2 py-1 text-[12px] outline-none focus:bg-primary/5 placeholder:text-muted-foreground/40'
@@ -203,16 +186,6 @@ export function TablaComprobantes({
                   Editar
                 </Button>
               )}
-              <Button
-                onClick={handleExport}
-                disabled={exporting || !comprobantes?.length}
-                variant="default"
-                size="sm"
-                className={cn(btn, 'bg-[#22b86c] hover:bg-[#1aa35f] text-white')}
-              >
-                {exporting ? <Spinner size={12} /> : <Download size={13} />}
-                Exportar COMAP
-              </Button>
             </>
           ) : (
             <>

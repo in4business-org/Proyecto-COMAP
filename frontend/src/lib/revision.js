@@ -31,7 +31,8 @@ export function indiceDuplicados(comprobantes) {
 }
 
 /**
- * Problemas de un comprobante: [{ tipo, texto }].
+ * Problemas de un comprobante: [{ tipo, texto, ayuda }]. `texto` va debajo del
+ * proveedor; `ayuda` explica qué hacer.
  * `duplicados` sale de indiceDuplicados sobre el mismo período.
  */
 export function problemasDe(c, { rutEmpresa, duplicados } = {}) {
@@ -39,21 +40,30 @@ export function problemasDe(c, { rutEmpresa, duplicados } = {}) {
   const rutRec = soloDigitos(c.rut_receptor)
   const rutEmp = soloDigitos(rutEmpresa)
   if (rutRec && rutEmp && rutRec !== rutEmp) {
-    problemas.push({ tipo: 'rut', texto: 'El RUT del receptor no es el de la empresa' })
+    problemas.push({
+      tipo: 'rut',
+      texto: 'El RUT del receptor no es el de la empresa',
+      ayuda: 'La factura está a nombre de otro RUT. Si es un error del proveedor, hay que pedirle una nota de crédito y una factura nueva.',
+    })
   }
   if (c.monto == null) {
-    problemas.push({ tipo: 'monto', texto: 'Falta el monto' })
+    problemas.push({ tipo: 'monto', texto: 'Falta el monto', ayuda: 'No pudimos leer el total. Completalo a mano mirando el comprobante.' })
   } else if (Number(c.monto) === 0) {
-    problemas.push({ tipo: 'monto', texto: 'El monto quedó en 0' })
+    problemas.push({ tipo: 'monto', texto: 'El monto quedó en 0', ayuda: 'Un comprobante en 0 no suma a la inversión. Revisá el total en el comprobante y corregilo.' })
   }
   const k = claveDuplicado(c)
   if (k && duplicados?.get(k) > 1) {
-    problemas.push({ tipo: 'duplicado', texto: 'Parece repetida: mismo proveedor y número' })
+    problemas.push({
+      tipo: 'duplicado',
+      texto: 'Parece repetida: mismo proveedor y número',
+      ayuda: 'Ya hay otro comprobante igual en este período. Si es el mismo, borrá uno de los dos.',
+    })
   }
   if (!c.archivo) {
     problemas.push({
       tipo: 'archivo',
       texto: c.texto_extraido ? 'Falta el PDF' : 'Cargada a mano o desde Excel: falta el PDF',
+      ayuda: 'Sin el archivo no se puede presentar. Subí el PDF del comprobante.',
     })
   }
   return problemas
