@@ -290,7 +290,6 @@ export default function Dashboard() {
                   const days = daysFromNow(event.date)
                   const isOverdue = days < 0
                   const isUrgent = days >= 0 && days <= 30
-                  const isSoon   = days > 30 && days <= 90
 
                   return (
                     <Link

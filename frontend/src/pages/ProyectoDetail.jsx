@@ -244,7 +244,6 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta, empresa }) {
   const [results, setResults] = useState(null)
   const [loadingResults, setLoadingResults] = useState(true)
   const [uploadMsg, setUploadMsg] = useState('')
-  const [periodoCounts, setPeriodoCounts] = useState({})
   const [isEditing, setIsEditing] = useState(false)
   const [editedResults, setEditedResults] = useState([])
   const [savingEdit, setSavingEdit] = useState(false)
@@ -276,14 +275,11 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta, empresa }) {
       .then((grouped) => {
         // grouped = { presentacion: [...], control_2027: [...], ... }
         const cache = {}
-        const counts = {}
         for (const p of periodos) {
           const items = grouped[p] || []
           cache[p] = items
-          counts[p] = items.length
         }
         setResultsCache(cache)
-        setPeriodoCounts(counts)
         setResults(cache[activePeriodo] || [])
       })
       .catch((err) => { console.error(err); setResults([]) })
@@ -338,7 +334,6 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta, empresa }) {
 
       setResults(updated)
       setResultsCache(prev => ({ ...prev, [activePeriodo]: updated }))
-      setPeriodoCounts(prev => ({ ...prev, [activePeriodo]: updated?.length || 0 }))
       setSelectedRows([])
       setIsEditing(false)
     } catch (err) {
@@ -406,7 +401,6 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta, empresa }) {
       const updated = await factApi.uploadAndProcess(empresaId, proyectoId, activePeriodo, files)
       setResults(updated)
       setResultsCache(prev => ({ ...prev, [activePeriodo]: updated }))
-      setPeriodoCounts(prev => ({ ...prev, [activePeriodo]: updated?.length || 0 }))
       const nuevas = (updated?.length || 0) - prevCount
       setUploadMsg(nuevas > 0 ? `${nuevas} factura(s) procesada(s)` : 'Archivos procesados sin nuevas facturas detectadas')
       setFiles([])
@@ -444,7 +438,6 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta, empresa }) {
       const updated = await factApi.importar(empresaId, proyectoId, activePeriodo, file)
       setResults(updated)
       setResultsCache(prev => ({ ...prev, [activePeriodo]: updated }))
-      setPeriodoCounts(prev => ({ ...prev, [activePeriodo]: updated?.length || 0 }))
       setUploadMsg('Importación masiva completada')
     } catch (err) {
       console.error(err)
@@ -1104,7 +1097,6 @@ function FacturasTab({ empresaId, proyectoId, periodos, meta, empresa }) {
                         const completado = r.proveedor && r.fecha && r.monto
                         const cellEdit = "p-0 border-r border-b border-border/25 last:border-r-0"
                         const inputEdit = "w-full min-h-[34px] bg-transparent text-foreground px-2 py-1 text-[12px] outline-none focus:bg-primary/5 placeholder:text-muted-foreground/40"
-                        const selectEdit = "w-full min-h-[34px] bg-background text-foreground px-2 py-1 text-[12px] outline-none focus:bg-primary/5 cursor-pointer"
 
                         return (
                           <tr key={r.id ?? i} className={cn(isEditing ? "last:border-b-0" : "bg-card hover:bg-accent/30 transition-colors")}>

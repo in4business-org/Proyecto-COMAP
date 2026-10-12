@@ -22,7 +22,9 @@ export function ThemeProvider({ children }) {
     }
     try {
       localStorage.setItem('theme', theme);
-    } catch {}
+    } catch {
+      // localStorage bloqueado (modo privado): el tema dura sólo esta sesión
+    }
   }, [theme]);
 
   function toggleTheme() {
