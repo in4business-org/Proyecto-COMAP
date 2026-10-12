@@ -44,11 +44,7 @@ class ExcelService {
       const aOrder = CATEGORY_CONFIG[aCategory]?.order ?? 0;
       const bOrder = CATEGORY_CONFIG[bCategory]?.order ?? 0;
 
-      if (aOrder !== bOrder) {
-        return bOrder - aOrder;
-      }
-
-      return;
+      return bOrder - aOrder;
     });
   }
 
@@ -83,16 +79,12 @@ class ExcelService {
 
   writeFacturaRow(ws, rowNumber, factura) {
     const descripcion = factura.descripcion || null;
-    const numeroFactura =
-      factura.numero_factura || factura.serie_numero_factura || null;
-    const fecha = normalizarFecha(factura.fecha || factura.fecha_comprobante);
+    const numeroFactura = factura.numero_factura || null;
+    const fecha = normalizarFecha(factura.fecha);
     const cantidad = factura.cantidad ?? 1;
-    const proveedor =
-      factura.proveedor || factura.razon_social_emisor || null;
+    const proveedor = factura.proveedor || null;
     const moneda = factura.moneda || null;
-    const subtotal = normalizarMonto(
-      factura.monto ?? factura.subtotal ?? factura.valor_monto
-    );
+    const subtotal = normalizarMonto(factura.monto);
 
     // B = descripcion
     ws.getCell(rowNumber, 2).value = descripcion;
@@ -263,7 +255,7 @@ class ExcelService {
         continue;
       }
 
-      const monto = normalizarMonto(factura.monto ?? factura.subtotal ?? factura.valor_monto);
+      const monto = normalizarMonto(factura.monto);
       if (!monto) continue;
 
       let montoUI;
@@ -285,8 +277,6 @@ class ExcelService {
   }
 
   async generarExcelComap(facturas, rutaSalida, opciones = {}) {
-    const { sheetName } = opciones;
-
     if (!fs.existsSync(TEMPLATE_CUADRO)) {
       throw new Error(`Template not found: ${TEMPLATE_CUADRO}`);
     }
@@ -300,9 +290,7 @@ class ExcelService {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(rutaSalida);
 
-    const wsCuadro = sheetName
-      ? workbook.getWorksheet(sheetName)
-      : workbook.getWorksheet('CUADRO DE INVERSIONES') || workbook.worksheets[0];
+    const wsCuadro = workbook.getWorksheet('CUADRO DE INVERSIONES') || workbook.worksheets[0];
 
     if (!wsCuadro) {
       throw new Error('No se encontró la hoja a procesar');
