@@ -10,24 +10,11 @@ const empresaService = require('../empresa/empresa.service');
 const storageService = require('../../config/s3.config');
 const prisma = require('../../config/prisma');
 const cotizacionService = require('../cotizacion/cotizacion.service');
-const { formatearFecha, normalizarFecha } = require('../../common/utils/normalize');
-
-/** Normaliza cualquier valor de fecha (Date, DD/MM/YYYY, YYYY-MM-DD) a string DD/MM/YYYY */
-function toFechaDDMMYYYY(val) {
-  if (!val) return null;
-  if (val instanceof Date) return formatearFecha(val);
-  const date = normalizarFecha(val);
-  return date ? formatearFecha(date) : null;
-}
-
-/** Solo acepta 'Factura' o 'Presupuesto' (sin distinguir mayúsculas); cualquier otro valor queda en null */
-function normalizarTipoComprobante(val) {
-  if (typeof val !== 'string') return null;
-  const v = val.trim().toLowerCase();
-  if (v === 'factura') return 'Factura';
-  if (v === 'presupuesto') return 'Presupuesto';
-  return null;
-}
+const {
+  formatearFecha,
+  toFechaDDMMYYYY,
+  normalizarTipoComprobante,
+} = require('../../common/utils/normalize');
 
 const { requireEscritura } = require('../../middleware/acceso.middleware');
 const { puedeEscribir } = require('../../common/constants/permisos');
@@ -50,6 +37,30 @@ function getMimeType(filename) {
   return mimeMap[ext] || 'application/pdf';
 }
 
+/**
+ * Convierte un comprobante (de la IA, del Excel o editado en pantalla) a las
+ * columnas de Factura. Si falta fecha de ejecución se usa la del comprobante.
+ */
+function aFilaFactura(r) {
+  return {
+    archivo: r.archivo || null,
+    descripcion: r.descripcion || null,
+    numero_factura: r.numero_factura || null,
+    proveedor: r.proveedor || null,
+    rut: r.rut || null,
+    fecha: toFechaDDMMYYYY(r.fecha),
+    monto: r.monto ? parseFloat(r.monto) : null,
+    moneda: r.moneda || null,
+    cantidad: r.cantidad ? parseInt(r.cantidad) : 1,
+    categoria: r.categoria || null,
+    rut_receptor: r.rut_receptor || null,
+    razon_social_receptor: r.razon_social_receptor || null,
+    tipo_comprobante: normalizarTipoComprobante(r.tipo_comprobante),
+    fecha_ejecucion: toFechaDDMMYYYY(r.fecha_ejecucion) || toFechaDDMMYYYY(r.fecha),
+    texto_extraido: Boolean(r.texto_extraido),
+  };
+}
+
 /** Save results to database (upsert by id to preserve updatedAt per-row) */
 async function guardarResultadosDB(proyectoId, periodo, resultados) {
   const incoming = resultados || [];
@@ -67,25 +78,7 @@ async function guardarResultadosDB(proyectoId, periodo, resultados) {
     });
 
     await Promise.all(incoming.map(r => {
-      const data = {
-        proyectoId,
-        periodo,
-        archivo: r.archivo || null,
-        descripcion: r.descripcion || null,
-        numero_factura: r.numero_factura || null,
-        proveedor: r.proveedor || null,
-        rut: r.rut || null,
-        fecha: toFechaDDMMYYYY(r.fecha) || null,
-        monto: r.monto ? parseFloat(r.monto) : null,
-        moneda: r.moneda || null,
-        cantidad: r.cantidad ? parseInt(r.cantidad) : 1,
-        categoria: r.categoria || null,
-        rut_receptor: r.rut_receptor || null,
-        razon_social_receptor: r.razon_social_receptor || null,
-        tipo_comprobante: normalizarTipoComprobante(r.tipo_comprobante),
-        fecha_ejecucion: toFechaDDMMYYYY(r.fecha_ejecucion) || toFechaDDMMYYYY(r.fecha) || null,
-        texto_extraido: Boolean(r.texto_extraido),
-      };
+      const data = { proyectoId, periodo, ...aFilaFactura(r) };
       if (r.id) {
         return tx.factura.upsert({
           where: { id: r.id },
@@ -134,25 +127,7 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/subir-y-procesa
 
     if (nuevos.length > 0) {
       await prisma.factura.createMany({
-        data: nuevos.map(r => ({
-          proyectoId,
-          periodo,
-          archivo: r.archivo || null,
-          descripcion: r.descripcion || null,
-          numero_factura: r.numero_factura || null,
-          proveedor: r.proveedor || null,
-          rut: r.rut || null,
-          fecha: toFechaDDMMYYYY(r.fecha) || null,
-          monto: r.monto ? parseFloat(r.monto) : null,
-          moneda: r.moneda || null,
-          cantidad: r.cantidad ? parseInt(r.cantidad) : 1,
-          categoria: r.categoria || null,
-          rut_receptor: r.rut_receptor || null,
-          razon_social_receptor: r.razon_social_receptor || null,
-          tipo_comprobante: normalizarTipoComprobante(r.tipo_comprobante),
-          fecha_ejecucion: toFechaDDMMYYYY(r.fecha_ejecucion) || toFechaDDMMYYYY(r.fecha) || null,
-          texto_extraido: Boolean(r.texto_extraido),
-        })),
+        data: nuevos.map(r => ({ proyectoId, periodo, ...aFilaFactura(r) })),
       });
     }
 
@@ -263,12 +238,7 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/excel', async (
         // Sin permiso de escritura no persistimos, pero el Excel se genera
         // igual: normalizamos las fechas como lo haria guardarResultadosDB
         // para que el archivo salga identico.
-        resultados = parsedStats.map((r) => ({
-          ...r,
-          fecha: toFechaDDMMYYYY(r.fecha) || null,
-          fecha_ejecucion:
-            toFechaDDMMYYYY(r.fecha_ejecucion) || toFechaDDMMYYYY(r.fecha) || null,
-        }));
+        resultados = parsedStats.map(aFilaFactura);
       }
     }
     if (!resultados.length) return res.status(404).json({ error: 'No hay facturas procesadas' });

@@ -48,4 +48,34 @@ function formatearFecha(date) {
   return `${dd}/${mm}/${yyyy}`;
 }
 
-module.exports = { normalizarMonto, normalizarFecha, formatearFecha };
+/** Normaliza cualquier valor de fecha (Date, DD/MM/YYYY, YYYY-MM-DD) a string DD/MM/YYYY */
+function toFechaDDMMYYYY(val) {
+  if (!val) return null;
+  if (val instanceof Date) return formatearFecha(val);
+  const date = normalizarFecha(val);
+  return date ? formatearFecha(date) : null;
+}
+
+/** Año de una fecha en cualquiera de los formatos de normalizarFecha, o null */
+function anioDeFecha(val) {
+  const date = val instanceof Date ? val : normalizarFecha(val);
+  return date ? date.getFullYear() : null;
+}
+
+/** Solo acepta 'Factura' o 'Presupuesto' (sin distinguir mayúsculas); cualquier otro valor queda en null */
+function normalizarTipoComprobante(val) {
+  if (typeof val !== 'string') return null;
+  const v = val.trim().toLowerCase();
+  if (v === 'factura') return 'Factura';
+  if (v === 'presupuesto') return 'Presupuesto';
+  return null;
+}
+
+module.exports = {
+  normalizarMonto,
+  normalizarFecha,
+  formatearFecha,
+  toFechaDDMMYYYY,
+  anioDeFecha,
+  normalizarTipoComprobante,
+};

@@ -2,19 +2,7 @@
  * JSON Schema for a single invoice item, used as Gemini's response schema.
  * Mirrors the TypeScript interface from invoice_parcer.
  */
-const INVOICE_CATEGORIES_SCHEMA = [
-  'Maquinaria',
-  'Equipos',
-  'Instalaciones',
-  'Vehiculos',
-  'MEIV/Imprevistos',
-  'Materiales',
-  'Mano de Obra Directa',
-  'Mano de Obra Indirecta',
-  'Leyes Sociales',
-  'Honorarios',
-  'OC/Imprevistos',
-];
+const { CATEGORIAS, TIPOS_COMPROBANTE } = require('../../../common/constants/factura');
 
 const INVOICE_ITEM_SCHEMA = {
   type: 'OBJECT',
@@ -31,12 +19,12 @@ const INVOICE_ITEM_SCHEMA = {
     subtotal: { type: 'NUMBER', nullable: true },
     categoria: {
       type: 'STRING',
-      enum: INVOICE_CATEGORIES_SCHEMA,
+      enum: CATEGORIAS,
       nullable: true,
     },
     tipo_comprobante: {
       type: 'STRING',
-      enum: ['Factura', 'Presupuesto'],
+      enum: TIPOS_COMPROBANTE,
       nullable: true,
     },
   },
@@ -60,4 +48,4 @@ const INVOICE_RESPONSE_SCHEMA = {
   items: INVOICE_ITEM_SCHEMA,
 };
 
-module.exports = { INVOICE_ITEM_SCHEMA, INVOICE_RESPONSE_SCHEMA, INVOICE_CATEGORIES_SCHEMA };
+module.exports = { INVOICE_RESPONSE_SCHEMA };

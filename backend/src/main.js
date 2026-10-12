@@ -30,6 +30,7 @@ const {
 } = require('./middleware/acceso.middleware');
 const accesoService = require('./modules/acceso/acceso.service');
 const prisma = require('./config/prisma');
+const { aProyectoDTO } = require('./modules/proyecto/proyecto.service');
 
 // ── Performance timing ────────────────────────────────────
 app.use((req, res, next) => {
@@ -107,16 +108,7 @@ app.get('/api/dashboard', requireAuth, async (req, res) => {
     });
     res.json(empresas.map(e => ({
       ...e,
-      proyectos: e.proyectos.map(p => ({
-        id: p.id,
-        expediente: p.expediente,
-        fecha_creacion: p.fecha_creacion,
-        fecha_presentacion: p.fecha_presentacion,
-        anio_presentacion: p.anio_presentacion,
-        duracion_seguimiento: p.duracion_seguimiento,
-        cotizacion_ui: p.cotizacion_ui,
-        cotizacion_usd: p.cotizacion_usd,
-      }))
+      proyectos: e.proyectos.map(aProyectoDTO),
     })));
   } catch (e) {
     res.status(500).json({ error: e.message });
