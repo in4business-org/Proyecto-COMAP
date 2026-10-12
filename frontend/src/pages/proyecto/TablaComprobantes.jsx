@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Download, Check, Plus, RefreshCw } from 'lucide-react'
+import { Download, Check, Plus, RefreshCw, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { LoadingState, Spinner } from '@/components/ui/loading'
@@ -51,7 +51,8 @@ const FILA_NUEVA = {
  */
 export function TablaComprobantes({
   empresaId, proyectoId, periodo, empresa, comprobantes, cargando,
-  cotizacion, cargandoCotizacion, puedeEditar, anioBase, opcionesEjercicio, onActualizar,
+  cotizacion, cargandoCotizacion, puedeEditar, anioBase, opcionesEjercicio,
+  categoria, onQuitarCategoria, onActualizar,
 }) {
   const [isEditing, setIsEditing] = useState(false)
   const [editedResults, setEditedResults] = useState([])
@@ -80,6 +81,11 @@ export function TablaComprobantes({
       return sortDir === 'asc' ? cmp : -cmp
     })
   }, [comprobantes, editedResults, isEditing, sortField, sortDir])
+
+  // El filtro por categoría sólo cambia lo que se ve: guardar manda siempre la
+  // lista completa del período, si no se borrarían las filas ocultas.
+  const enCategoria = (r) => !categoria || (categoria === 'Sin categoría' ? !r.categoria : r.categoria === categoria)
+  const visibles = (sortedDisplayResults || []).filter(enCategoria)
 
   const handleSort = (field) => {
     if (sortField === field) {
@@ -125,7 +131,8 @@ export function TablaComprobantes({
   }
 
   const handleToggleAllRows = () => {
-    setSelectedRows(selectedRows.length === editedResults.length ? [] : editedResults.map(r => r.id))
+    const ids = editedResults.filter(enCategoria).map(r => r.id)
+    setSelectedRows(selectedRows.length === ids.length ? [] : ids)
   }
 
   const handleDeleteSelected = () => {
@@ -298,6 +305,19 @@ export function TablaComprobantes({
         </div>
       </div>
 
+      {categoria && (
+        <div className="mb-4 flex items-center gap-2 text-[12px]">
+          <span className="text-muted-foreground">Mostrando sólo</span>
+          <span className="inline-flex items-center gap-1 rounded-md border border-primary/30 bg-primary/10 pl-2 pr-1 py-0.5 font-medium text-primary">
+            {categoria}
+            <button type="button" onClick={onQuitarCategoria} aria-label="Quitar el filtro de categoría" className="rounded p-0.5 hover:bg-primary/15 cursor-pointer">
+              <X size={12} />
+            </button>
+          </span>
+          <span className="text-muted-foreground">({visibles.length})</span>
+        </div>
+      )}
+
       {cargando && <LoadingState message="Cargando resultados guardados..." />}
 
       {comprobantes && !cargando && (
@@ -312,7 +332,7 @@ export function TablaComprobantes({
                         <input
                           type="checkbox"
                           aria-label="Seleccionar todos"
-                          checked={editedResults.length > 0 && selectedRows.length === editedResults.length}
+                          checked={visibles.length > 0 && selectedRows.length === visibles.length}
                           onChange={handleToggleAllRows}
                         />
                       </th>
@@ -336,7 +356,7 @@ export function TablaComprobantes({
                   </tr>
                 </thead>
                 <tbody className={cn(isEditing ? '' : 'divide-y divide-border/50')}>
-                  {(sortedDisplayResults || []).map((r, i) => {
+                  {visibles.map((r, i) => {
                     const completado = r.proveedor && r.fecha && r.monto
                     const anioEjec = anioDe(r.fecha_ejecucion)
 

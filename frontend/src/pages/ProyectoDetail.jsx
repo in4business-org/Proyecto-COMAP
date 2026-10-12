@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, CheckSquare, X } from 'lucide-react'
 import { LoadingState } from '@/components/ui/loading'
 import { cn } from '@/lib/utils'
@@ -11,10 +11,12 @@ import { ChecklistPanel } from './proyecto/ChecklistPanel'
 
 export default function ProyectoDetail() {
   const { empresaId, proyectoId } = useParams()
+  // La pantalla de empresa entra con ?checklist=1, ?periodo=, ?vista=plan o ?categoria=
+  const [params, setParams] = useSearchParams()
   const [empresa, setEmpresa] = useState(null)
   const [meta, setMeta] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [checklistOpen, setChecklistOpen] = useState(false)
+  const [checklistOpen, setChecklistOpen] = useState(params.get('checklist') === '1')
   const [checklistPendientes, setChecklistPendientes] = useState(null)
 
   useEffect(() => {
@@ -65,7 +67,21 @@ export default function ProyectoDetail() {
         </div>
 
         <div className="pb-10">
-          <Comprobantes empresaId={empresaId} proyectoId={proyectoId} periodos={periodos} proyecto={meta} empresa={empresa} />
+          <Comprobantes
+            empresaId={empresaId}
+            proyectoId={proyectoId}
+            periodos={periodos}
+            proyecto={meta}
+            empresa={empresa}
+            periodoInicial={params.get('periodo') || 'presentacion'}
+            vistaInicial={params.get('vista')}
+            categoria={params.get('categoria')}
+            onQuitarCategoria={() => {
+              const next = new URLSearchParams(params)
+              next.delete('categoria')
+              setParams(next, { replace: true })
+            }}
+          />
         </div>
       </div>
 

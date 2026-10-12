@@ -15,15 +15,21 @@ export function useComprobantes(empresaId, proyectoId, periodos, periodoActivo) 
   const [cargando, setCargando] = useState(true)
 
   useEffect(() => {
+    setPorPeriodo({})
+    setComprobantes(null)
+    if (!proyectoId) return
+    let cancelado = false
     setCargando(true)
     factApi.getAllResults(empresaId, proyectoId)
       .then((agrupados) => {
+        if (cancelado) return
         const cache = {}
         for (const p of periodos) cache[p] = agrupados[p] || []
         setPorPeriodo(cache)
       })
-      .catch((err) => { console.error(err); setComprobantes([]) })
-      .finally(() => setCargando(false))
+      .catch((err) => { if (!cancelado) { console.error(err); setComprobantes([]) } })
+      .finally(() => { if (!cancelado) setCargando(false) })
+    return () => { cancelado = true }
   }, [empresaId, proyectoId, periodos])
 
   useEffect(() => {

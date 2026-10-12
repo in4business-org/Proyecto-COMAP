@@ -1,12 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { cotizaciones as cotApi, facturas as factApi } from '@/lib/api'
-import { anioDe } from '@/lib/fechas'
-import { calcularResumen } from '@/lib/inversion'
 import { etiquetaPeriodo } from '@/lib/proyecto'
 import { useAuth } from '../../context/AuthContext'
 import { useComprobantes } from './useComprobantes'
-import { ResumenInversion } from './ResumenInversion'
 import { PlanEjecucion } from './PlanEjecucion'
 import { CargaArchivos } from './CargaArchivos'
 import { TablaComprobantes } from './TablaComprobantes'
@@ -20,12 +17,15 @@ const tabClass = (activa) => cn(
 )
 
 /** Comprobantes de inversión de un proyecto: resumen, plan de ejecución y tabla */
-export function Comprobantes({ empresaId, proyectoId, periodos, proyecto, empresa }) {
+export function Comprobantes({
+  empresaId, proyectoId, periodos, proyecto, empresa,
+  periodoInicial = 'presentacion', vistaInicial = 'list', categoria, onQuitarCategoria,
+}) {
   // Cosmético: el backend rechaza igual con 403 si alguien fuerza la llamada
   const { puedeEscribir } = useAuth()
   const puedeEditar = puedeEscribir(empresaId, 'facturas')
-  const [periodo, setPeriodo] = useState('presentacion')
-  const [vista, setVista] = useState('list')
+  const [periodo, setPeriodo] = useState(periodos.includes(periodoInicial) ? periodoInicial : 'presentacion')
+  const [vista, setVista] = useState(vistaInicial === 'plan' ? 'plan' : 'list')
   const [cotizacion, setCotizacion] = useState(null)
   const [cargandoCotizacion, setCargandoCotizacion] = useState(true)
   const [planPendiente, setPlanPendiente] = useState(false)
@@ -41,8 +41,6 @@ export function Comprobantes({ empresaId, proyectoId, periodos, proyecto, empres
       .catch(() => setCotizacion(null))
       .finally(() => setCargandoCotizacion(false))
   }, [proyecto?.fecha_presentacion])
-
-  const resumen = useMemo(() => calcularResumen(comprobantes, cotizacion, anioDe), [comprobantes, cotizacion])
 
   const anioBase = proyecto?.anio_presentacion ? parseInt(proyecto.anio_presentacion) : new Date().getFullYear()
   const columnas = useMemo(() => columnasDelPlan(periodos, anioBase), [periodos, anioBase])
@@ -74,8 +72,6 @@ export function Comprobantes({ empresaId, proyectoId, periodos, proyecto, empres
           </button>
         ))}
       </div>
-
-      <ResumenInversion resumen={resumen} periodoLabel={periodoLabel} />
 
       <div className="flex items-center gap-0.5 border-b border-border/60">
         {[{ key: 'list', label: 'Comprobantes' }, { key: 'plan', label: 'Plan de ejecución' }].map(v => (
@@ -123,6 +119,8 @@ export function Comprobantes({ empresaId, proyectoId, periodos, proyecto, empres
             puedeEditar={puedeEditar}
             anioBase={anioBase}
             opcionesEjercicio={opcionesEjercicio}
+            categoria={categoria}
+            onQuitarCategoria={onQuitarCategoria}
             onActualizar={aplicar}
           />
         </div>
