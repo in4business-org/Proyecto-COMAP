@@ -2,17 +2,22 @@ const { Router } = require('express');
 const empresaService = require('./empresa.service');
 const accesoService = require('../acceso/acceso.service');
 const { requireEscritura } = require('../../middleware/acceso.middleware');
+const { limpiarRut, problemaRut } = require('../../common/utils/rut');
 
 const router = Router();
 
 // POST /api/empresas
 router.post('/', async (req, res) => {
   try {
-    const { rut, nombre } = req.body;
-    if (!rut || !nombre) return res.status(400).json({ error: 'rut y nombre son requeridos' });
-    const empresa_id = await empresaService.crear(rut, nombre);
+    const { rut, nombre, ...datos } = req.body || {};
+    const nombreLimpio = String(nombre || '').trim();
+    if (!rut || !nombreLimpio) return res.status(400).json({ error: 'El RUT y el nombre son obligatorios' });
+    const problema = problemaRut(rut);
+    if (problema) return res.status(400).json({ error: problema });
+    const empresa_id = await empresaService.crear(limpiarRut(rut), nombreLimpio, datos);
     res.json({ empresa_id });
   } catch(e) {
+    if (e.status === 409) return res.status(409).json({ error: e.message, empresa_id: e.empresaId });
     res.status(500).json({ error: e.message });
   }
 });

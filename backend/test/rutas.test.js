@@ -11,7 +11,7 @@ const path = require('path');
 let USUARIO_ACTUAL = null;
 
 // ── Datos ───────────────────────────────────────────────────
-const EMPRESAS = [{ id: 'e1', nombre: 'Uno', rut: '1' }, { id: 'e2', nombre: 'Dos', rut: '2' }];
+const EMPRESAS = [{ id: 'e1', nombre: 'Uno', rut: '210000000019' }, { id: 'e2', nombre: 'Dos', rut: '2' }];
 // sub-user ve e1 (solo lectura) y nada de e2
 let FILAS = [{ usuarioSub: 'sub-user', empresaId: 'e1', escritura: [] }];
 
@@ -31,7 +31,9 @@ const prismaStub = {
       const base = ids ? EMPRESAS.filter((e) => ids.includes(e.id)) : EMPRESAS;
       return base.map((e) => ({ ...e, proyectos: [] }));
     },
-    findUnique: async ({ where }) => EMPRESAS.find((e) => e.id === where.id) || null,
+    findUnique: async ({ where }) =>
+      EMPRESAS.find((e) => (where.id && e.id === where.id) || (where.rut && e.rut === where.rut)) || null,
+    create: async ({ data }) => data,
     upsert: async () => ({}),
     update: async () => ({}),
     count: async () => EMPRESAS.length,
@@ -96,9 +98,12 @@ const BASE = 'http://127.0.0.1:3097';
 const MASTER = { sub: 'sub-master', role: 'master', email: 'a@x.com' };
 const USER = { sub: 'sub-user', role: 'user', email: 'u@x.com' };
 
-async function pedir(metodo, url, usuario) {
+async function pedir(metodo, url, usuario, datos) {
   USUARIO_ACTUAL = usuario;
-  const res = await fetch(BASE + url, { method: metodo });
+  const res = await fetch(BASE + url, {
+    method: metodo,
+    ...(datos ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(datos) } : {}),
+  });
   let body = null;
   try { body = await res.json(); } catch { /* respuesta no-JSON */ }
   return { status: res.status, body };
@@ -199,6 +204,16 @@ function chequear(desc, ok, detalle) {
 
   r = await pedir('POST', '/api/empresas', MASTER);
   chequear('POST /api/empresas como master no da 403', r.status !== 403, `status ${r.status}`);
+
+  // ── Alta de empresa: validaciones ─────────────────────
+  r = await pedir('POST', '/api/empresas', MASTER, { rut: '211003420018', nombre: 'X' });
+  chequear('POST /api/empresas con RUT de dígito verificador mal -> 400', r.status === 400, `status ${r.status}`);
+  r = await pedir('POST', '/api/empresas', MASTER, { rut: '210000000019', nombre: 'Otra' });
+  chequear('POST /api/empresas con RUT existente -> 409 con el id de la existente',
+    r.status === 409 && r.body?.empresa_id === 'e1', JSON.stringify(r));
+  r = await pedir('POST', '/api/empresas', MASTER, { rut: '211.003.420-017', nombre: ' Nueva ', giro: 'Envases' });
+  chequear('POST /api/empresas válida -> 200 (acepta puntos y guiones)',
+    r.status === 200 && r.body?.empresa_id === '211003420017_Nueva', JSON.stringify(r));
 
   // ── Admin pasa por todo ───────────────────────────────
   for (const [metodo, url] of [

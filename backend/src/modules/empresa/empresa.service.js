@@ -6,19 +6,29 @@ const CAMPOS_EMPRESA = [
 ];
 
 class EmpresaService {
-  async crear(rut, nombre) {
+  /**
+   * Da de alta una empresa. `datos` puede traer el resto de CAMPOS_EMPRESA.
+   * Si ya hay una empresa con ese RUT no la toca: tira un error con status
+   * 409 y el id de la existente (antes hacía upsert y le cambiaba el nombre
+   * sin avisar).
+   */
+  async crear(rut, nombre, datos = {}) {
+    const existente = await prisma.empresa.findUnique({ where: { rut } });
+    if (existente) {
+      const err = new Error(`Ya existe una empresa con ese RUT: ${existente.nombre}`);
+      err.status = 409;
+      err.empresaId = existente.id;
+      throw err;
+    }
+
     const empresaId = `${rut}_${nombre.replace(/\s+/g, '_')}`;
-
-    await prisma.empresa.upsert({
-      where: { rut },
-      update: { nombre },
-      create: {
-        id: empresaId,
-        rut,
-        nombre
+    const extra = {};
+    for (const campo of CAMPOS_EMPRESA) {
+      if (campo !== 'rut' && campo !== 'nombre' && datos[campo] !== undefined && datos[campo] !== '') {
+        extra[campo] = datos[campo];
       }
-    });
-
+    }
+    await prisma.empresa.create({ data: { id: empresaId, rut, nombre, ...extra } });
     return empresaId;
   }
 
