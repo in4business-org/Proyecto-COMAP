@@ -1,6 +1,4 @@
-const fs = require('fs');
-const path = require('path');
-const { parseInvoice, ALLOWED_MIME_TYPES } = require('./parser');
+const { parseInvoice } = require('./parser');
 
 /**
  * Maps Gemini item fields to the format the rest of the app expects
@@ -23,23 +21,6 @@ function mapGeminiItemToLegacy(item, archivo) {
     tipo_comprobante: item.tipo_comprobante || null,
     texto_extraido: true,
   };
-}
-
-/**
- * Supported file extensions for invoice parsing.
- */
-const SUPPORTED_EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg', '.webp'];
-
-function getMimeType(filePath) {
-  const ext = path.extname(filePath).toLowerCase();
-  const mimeMap = {
-    '.pdf': 'application/pdf',
-    '.png': 'image/png',
-    '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.webp': 'image/webp',
-  };
-  return mimeMap[ext] || 'application/pdf';
 }
 
 class FacturaService {

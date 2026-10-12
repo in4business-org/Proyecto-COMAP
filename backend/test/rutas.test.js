@@ -71,8 +71,8 @@ authStub.requireAuth = requireAuthFake;
 authStub.requireMaster = requireMasterFake;
 authStub.requirePanel = requirePanelFake;
 
-// S3 simulado: que listFiles devuelva algo hace que /analizar pase el early
-// return y llegue a la parte que reescribe la tabla.
+// S3 simulado: que listFiles devuelva algo hace que /excel, sin facturas
+// guardadas, llegue a la parte que analiza los archivos.
 const s3Stub = {
   listFiles: async () => [{ name: 'factura.pdf' }],
   downloadFile: async () => Buffer.from('x'),
@@ -137,7 +137,7 @@ function chequear(desc, ok, detalle) {
     ['GET', '/api/empresas/e2/proyectos/p2/checklist'],
     ['GET', '/api/empresas/e2/proyectos/p2/simulador/resultados'],
     ['GET', '/api/empresas/e2/proyectos/p2/all-resultados'],
-    ['POST', '/api/empresas/e2/proyectos/p2/2024/upload'],
+    ['POST', '/api/empresas/e2/proyectos/p2/2024/subir-y-procesar'],
   ]) {
     r = await pedir(metodo, url, USER);
     chequear(`${metodo} ${url} sobre empresa ajena -> 404`, r.status === 404, `status ${r.status}`);
@@ -161,7 +161,7 @@ function chequear(desc, ok, detalle) {
     ['PATCH', '/api/empresas/e1/proyectos/p1/expediente', 'proyectos'],
     ['PATCH', '/api/empresas/e1/proyectos/p1/checklist/i1', 'checklist'],
     ['POST', '/api/empresas/e1/proyectos/p1/simulador/subir', 'simulador'],
-    ['POST', '/api/empresas/e1/proyectos/p1/2024/upload', 'facturas'],
+    ['POST', '/api/empresas/e1/proyectos/p1/2024/subir-y-procesar', 'facturas'],
     ['PUT', '/api/empresas/e1/proyectos/p1/2024', 'facturas'],
   ]) {
     r = await pedir(metodo, url, USER);
@@ -176,7 +176,7 @@ function chequear(desc, ok, detalle) {
     r.status !== 403, `status ${r.status}`);
 
   for (const [metodo, url] of [
-    ['POST', '/api/empresas/e1/proyectos/p1/2024/upload'],
+    ['POST', '/api/empresas/e1/proyectos/p1/2024/subir-y-procesar'],
     ['POST', '/api/empresas/e1/proyectos', ],
     ['PUT', '/api/empresas/e1'],
     ['POST', '/api/empresas/e1/proyectos/p1/simulador/subir'],
@@ -217,7 +217,7 @@ function chequear(desc, ok, detalle) {
     ['PATCH', '/api/empresas/e1/proyectos/p2/metadata'],
     ['PATCH', '/api/empresas/e1/proyectos/p2/checklist/i1'],
     ['GET', '/api/empresas/e1/proyectos/p2/checklist'],
-    ['GET', '/api/empresas/e1/proyectos/p2/presentacion/analizar'],
+    ['POST', '/api/empresas/e1/proyectos/p2/presentacion/subir-y-procesar'],
     ['POST', '/api/empresas/e1/proyectos/p2/presentacion/excel'],
   ]) {
     r = await pedir(metodo, url, USER);
@@ -231,15 +231,6 @@ function chequear(desc, ok, detalle) {
   // Y el master tampoco puede cruzar empresas por error
   r = await pedir('PUT', '/api/empresas/e1/proyectos/p2/presentacion', MASTER);
   chequear('master: proyecto de otra empresa -> 404', r.status === 404, `status ${r.status}`);
-
-  // ── /analizar reescribe la tabla: exige escritura ──────
-  FILAS = [{ usuarioSub: 'sub-user', empresaId: 'e1', escritura: [] }];
-  r = await pedir('GET', '/api/empresas/e1/proyectos/p1/presentacion/analizar', USER);
-  chequear('GET /analizar con solo lectura -> 403 (reescribe la tabla)', r.status === 403, `status ${r.status}`);
-
-  FILAS = [{ usuarioSub: 'sub-user', empresaId: 'e1', escritura: ['facturas'] }];
-  r = await pedir('GET', '/api/empresas/e1/proyectos/p1/presentacion/analizar', USER);
-  chequear('GET /analizar con escritura no da 403', r.status !== 403, `status ${r.status}`);
 
   // ── /excel sigue abierto a lectura (no debe romperse) ──
   FILAS = [{ usuarioSub: 'sub-user', empresaId: 'e1', escritura: [] }];

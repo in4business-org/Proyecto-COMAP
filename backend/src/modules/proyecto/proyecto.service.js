@@ -1,7 +1,4 @@
 const crypto = require('crypto');
-const fs = require('fs');
-const path = require('path');
-const { PROYECTOS_DIR, TEMPLATES_DIR } = require('../../config/storage.config');
 const { CHECKLIST_PRESENTACION } = require('../../common/constants/checklist-items');
 const prisma = require('../../config/prisma');
 
@@ -9,11 +6,7 @@ class ProyectoService {
   async crear(empresaId, anioPresentacion, duracionSeguimiento, fechaPresentacion = null) {
     const fechaHoy = new Date().toISOString().split('T')[0];
     const proyectoId = `${fechaHoy}_${crypto.randomUUID().substring(0, 6)}`;
-    
-    const periodos = ['presentacion'];
-    for (let i = 1; i <= duracionSeguimiento; i++) {
-        periodos.push(`control_${anioPresentacion + i}`);
-    }
+
 
     // Prepare checklist models
     const checklistsToCreate = CHECKLIST_PRESENTACION.map(item => ({

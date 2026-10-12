@@ -1,6 +1,3 @@
-const fs = require('fs');
-const path = require('path');
-const { PROYECTOS_DIR } = require('../../config/storage.config');
 const { CHECKLIST_PRESENTACION } = require('../../common/constants/checklist-items');
 const prisma = require('../../config/prisma');
 

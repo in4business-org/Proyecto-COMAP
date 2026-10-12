@@ -19,21 +19,6 @@ function handle(res, err) {
   res.status(status).json({ error: err.message || 'Error interno' });
 }
 
-// Quién soy y qué alcance tengo, para que el panel se dibuje acorde
-router.get('/contexto', async (req, res) => {
-  try {
-    const ambito = await accesoService.getEmpresasAdministradas(req.user);
-    res.json({
-      rol: req.user.role,
-      esMaster: req.user.role === 'master',
-      // null = todas las empresas
-      empresasAdministradas: ambito,
-    });
-  } catch (err) {
-    handle(res, err);
-  }
-});
-
 // Listar usuarios visibles para quien pregunta
 router.get('/usuarios', async (req, res) => {
   try {

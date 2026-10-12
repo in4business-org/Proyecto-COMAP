@@ -1,6 +1,5 @@
 const { Router } = require('express');
 const multer = require('multer');
-const fs = require('fs');
 const simuladorService = require('./simulador.service');
 const { requireEscritura } = require('../../middleware/acceso.middleware');
 

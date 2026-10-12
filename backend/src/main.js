@@ -2,7 +2,6 @@ require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
-const path = require('path');
 
 // Import route modules
 const empresaRoutes = require('./modules/empresa/empresa.routes');
@@ -30,6 +29,7 @@ const {
   requireMasterParaEmpresas,
 } = require('./middleware/acceso.middleware');
 const accesoService = require('./modules/acceso/acceso.service');
+const prisma = require('./config/prisma');
 
 // ── Performance timing ────────────────────────────────────
 app.use((req, res, next) => {
@@ -126,32 +126,6 @@ app.get('/api/dashboard', requireAuth, async (req, res) => {
 // ── Health check ───────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
-
-// ── Stats ──────────────────────────────────────────────────
-const prisma = require('./config/prisma');
-
-app.get('/api/stats', requireAuth, async (req, res) => {
-  try {
-    // Acotado a las empresas visibles: un admin de empresa no deberia poder
-    // inferir cuantas empresas o facturas hay en el resto de la plataforma.
-    const visibles = await accesoService.getEmpresasVisibles(req.user);
-    const scope = visibles === null ? {} : { in: visibles };
-    const whereEmpresa = visibles === null ? {} : { where: { id: scope } };
-    const whereProyecto = visibles === null ? {} : { where: { empresaId: scope } };
-
-    const empresas = await prisma.empresa.count(whereEmpresa);
-    const proyectos = await prisma.proyecto.count(whereProyecto);
-    const facturas = await prisma.factura.count({
-      where: {
-        texto_extraido: true,
-        ...(visibles === null ? {} : { proyecto: { empresaId: scope } }),
-      },
-    });
-    res.json({ empresas, proyectos, facturas });
-  } catch (e) {
-    res.json({ empresas: 0, proyectos: 0, facturas: 0 });
-  }
 });
 
 // ── Start server ───────────────────────────────────────────

@@ -1,7 +1,5 @@
 const { Router } = require('express');
 const multer = require('multer');
-const fs = require('fs');
-const path = require('path');
 const checklistService = require('./checklist.service');
 const storageService = require('../../config/s3.config');
 const { requireEscritura } = require('../../middleware/acceso.middleware');

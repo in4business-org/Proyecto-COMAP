@@ -29,11 +29,7 @@ function normalizarTipoComprobante(val) {
   return null;
 }
 
-const {
-  requireEscritura,
-  proyectoPerteneceAEmpresa,
-} = require('../../middleware/acceso.middleware');
-const accesoService = require('../acceso/acceso.service');
+const { requireEscritura } = require('../../middleware/acceso.middleware');
 const { puedeEscribir } = require('../../common/constants/permisos');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
@@ -112,25 +108,6 @@ async function leerResultadosDB(proyectoId, periodo) {
 
 // ── Project-scoped invoice endpoints ─────────────────────
 
-// POST  upload files
-router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/upload', requireEscritura('facturas'), upload.array('files'), async (req, res) => {
-  try {
-    const { empresaId, proyectoId, periodo } = req.params;
-    const folderPath = `proyectos/${empresaId}/${proyectoId}/${periodo}`;
-    const supported = (req.files || []).filter(f => isSupported(f.originalname));
-    const subidos = await Promise.all(
-      supported.map(f =>
-        storageService.uploadFile(`${folderPath}/${f.originalname}`, f.buffer, f.mimetype)
-          .then(() => f.originalname)
-      )
-    );
-    res.json({ subidos, total: subidos.length });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
 // POST  upload + process files (appends to existing results)
 router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/subir-y-procesar', requireEscritura('facturas'), upload.array('files'), async (req, res) => {
   try {
@@ -153,10 +130,7 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/subir-y-procesa
       return res.json(await leerResultadosDB(proyectoId, periodo));
     }
 
-    const [nuevos, meta = {}] = await Promise.all([
-      facturaService.analizarMultipleArchivos(archivosData),
-      proyectoService.getMetadata(empresaId, proyectoId),
-    ]);
+    const nuevos = await facturaService.analizarMultipleArchivos(archivosData);
 
     if (nuevos.length > 0) {
       await prisma.factura.createMany({
@@ -225,17 +199,6 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/reprocesar', re
   }
 });
 
-// GET  retrieve persisted results for one periodo
-router.get('/empresas/:empresaId/proyectos/:proyectoId/:periodo/resultados', async (req, res) => {
-  try {
-    const { proyectoId, periodo } = req.params;
-    const data = await leerResultadosDB(proyectoId, periodo);
-    res.json(data || []);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
 // GET  retrieve persisted results for ALL periodos in one query
 router.get('/empresas/:empresaId/proyectos/:proyectoId/all-resultados', async (req, res) => {
   try {
@@ -269,52 +232,6 @@ router.put('/empresas/:empresaId/proyectos/:proyectoId/:periodo', requireEscritu
     await guardarResultadosDB(proyectoId, periodo, results);
     const updated = await leerResultadosDB(proyectoId, periodo);
     res.json(updated);
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// GET  analyze invoices + persist results
-router.get('/empresas/:empresaId/proyectos/:proyectoId/:periodo/analizar', async (req, res) => {
-  try {
-    const { empresaId, proyectoId, periodo } = req.params;
-    const folderPath = `proyectos/${empresaId}/${proyectoId}/${periodo}`;
-
-    const fileList = await storageService.listFiles(folderPath);
-    // Sin archivos la ruta es una lectura pura: devuelve lo guardado y no toca nada.
-    if (!fileList || !fileList.length) return res.json(await leerResultadosDB(proyectoId, periodo));
-
-    // A partir de aca REESCRIBE la tabla: guardarResultadosDB borra las filas
-    // del periodo y las recrea con el OCR nuevo, perdiendo las correcciones
-    // manuales. Como es un GET, requireEscritura lo exime, asi que el permiso
-    // se verifica a mano — y antes de descargar nada, para no hacer el trabajo
-    // caro y denegar despues.
-    if (!puedeEscribir(req.acceso, 'facturas')) {
-      return res.status(403).json({
-        error: 'Re-analizar reescribe las facturas del periodo: requiere permiso de escritura sobre "facturas"',
-      });
-    }
-
-    const archivosData = await Promise.all(
-      fileList
-        .filter(f => isSupported(f.name))
-        .map(f =>
-          storageService.downloadFile(`${folderPath}/${f.name}`)
-            .then(buffer => ({ buffer, mimeType: getMimeType(f.name), filename: f.name }))
-        )
-    );
-
-    const [resultados, meta = {}] = await Promise.all([
-      facturaService.analizarMultipleArchivos(archivosData),
-      proyectoService.getMetadata(empresaId, proyectoId),
-    ]);
-    const resultadosConFecha = resultados.map(r => ({
-      ...r,
-      fecha_ejecucion: r.fecha,
-    }));
-    await guardarResultadosDB(proyectoId, periodo, resultadosConFecha);
-    res.json(await leerResultadosDB(proyectoId, periodo));
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message });
@@ -451,7 +368,7 @@ router.get('/empresas/:empresaId/proyectos/:proyectoId/:periodo/template-importa
 // POST  import facturas from Excel
 router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/importar', requireEscritura('facturas'), upload.single('file'), async (req, res) => {
   try {
-    const { empresaId, proyectoId, periodo } = req.params;
+    const { proyectoId, periodo } = req.params;
     if (!req.file?.buffer) return res.status(400).json({ error: 'No se recibió archivo' });
 
     const ExcelJS = require('exceljs');
@@ -493,7 +410,6 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/importar', requ
       });
     });
 
-    const meta = await proyectoService.getMetadata(empresaId, proyectoId) || {};
     const nuevasConFecha = nuevas.map(r => ({
       ...r,
       fecha_ejecucion: r.fecha_ejecucion || r.fecha,
@@ -505,191 +421,6 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/importar', requ
     res.json(updated);
   } catch (e) {
     console.error(e);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// PATCH  update execution year of a single factura
-router.patch('/empresas/:empresaId/proyectos/:proyectoId/facturas/:facturaId/fecha-ejecucion', requireEscritura('facturas'), async (req, res) => {
-  try {
-    const { proyectoId, facturaId } = req.params;
-    const { anio } = req.body;
-
-    const anioInt = parseInt(anio);
-    if (!anio || isNaN(anioInt) || anioInt < 2000 || anioInt > 2100) {
-      return res.status(400).json({ error: 'anio debe ser un año válido' });
-    }
-
-    const factura = await prisma.factura.findFirst({ where: { id: facturaId, proyectoId } });
-    if (!factura) return res.status(404).json({ error: 'Factura no encontrada' });
-
-    // Conserva mes y día existentes en DD/MM/YYYY, solo cambia el año
-    let nuevaFechaEjecucion;
-    if (factura.fecha_ejecucion) {
-      const partes = factura.fecha_ejecucion.split('/');
-      // DD/MM/YYYY → partes[0]=DD, partes[1]=MM, partes[2]=YYYY
-      const dd = partes[0] || '01';
-      const mm = partes[1] || '01';
-      nuevaFechaEjecucion = `${dd}/${mm}/${anioInt}`;
-    } else {
-      nuevaFechaEjecucion = `01/01/${anioInt}`;
-    }
-
-    const updated = await prisma.factura.update({
-      where: { id: facturaId },
-      data: { fecha_ejecucion: nuevaFechaEjecucion },
-    });
-    res.json(updated);
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ── Simple mode endpoints ────────────────────────────────
-
-// El workspace "simple" es un area de trabajo temporal POR USUARIO. Antes era
-// una unica carpeta global: cualquier autenticado leia las facturas que subia
-// otro. El `sub` de Cognito es un UUID, asi que sirve de namespace directo.
-const simpleDir = (req) => `simple_uploads/${req.user.sub}`;
-const simpleResultsKey = (req) => `${simpleDir(req)}/_resultados.json`;
-
-router.post('/simple/upload', upload.array('files'), async (req, res) => {
-  try {
-    const supported = (req.files || []).filter(f => isSupported(f.originalname));
-    const subidos = await Promise.all(
-      supported.map(f =>
-        storageService.uploadFile(`${simpleDir(req)}/${f.originalname}`, f.buffer, f.mimetype)
-          .then(() => f.originalname)
-      )
-    );
-    res.json({ subidos, total: subidos.length });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-router.get('/simple/resultados', async (req, res) => {
-  try {
-    const buffer = await storageService.downloadFile(simpleResultsKey(req));
-    return res.json(JSON.parse(buffer.toString('utf-8')));
-  } catch {
-    res.json([]);
-  }
-});
-
-router.get('/simple/analizar', async (req, res) => {
-  try {
-    const fileList = await storageService.listFiles(simpleDir(req));
-    const archivosData = await Promise.all(
-      (fileList || [])
-        .filter(f => f.name !== '_resultados.json' && isSupported(f.name))
-        .map(f =>
-          storageService.downloadFile(`${simpleDir(req)}/${f.name}`)
-            .then(buffer => ({ buffer, mimeType: getMimeType(f.name), filename: f.name }))
-        )
-    );
-
-    const resultados = await facturaService.analizarMultipleArchivos(archivosData);
-    await storageService.uploadFile(simpleResultsKey(req), Buffer.from(JSON.stringify(resultados, null, 2)), 'application/json');
-    res.json(resultados);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-router.get('/simple/excel', async (req, res) => {
-  try {
-    let resultados = [];
-    try {
-      const buffer = await storageService.downloadFile(simpleResultsKey(req));
-      resultados = JSON.parse(buffer.toString('utf-8'));
-    } catch { }
-
-    if (!resultados.length) {
-      // fallback inline analyze
-      const fileList = await storageService.listFiles(simpleDir(req));
-      const archivosData = await Promise.all(
-        (fileList || [])
-          .filter(f => f.name !== '_resultados.json' && isSupported(f.name))
-          .map(f =>
-            storageService.downloadFile(`${simpleDir(req)}/${f.name}`)
-              .then(buffer => ({ buffer, mimeType: getMimeType(f.name), filename: f.name }))
-          )
-      );
-      resultados = await facturaService.analizarMultipleArchivos(archivosData);
-    }
-    if (!resultados.length) return res.status(404).json({ error: 'No hay facturas procesadas' });
-
-    const ruta = path.join(TMP_DIR, 'facturas_extraidas.xlsx');
-    await excelService.generarExcelSimple(resultados, ruta);
-
-    res.set({
-      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'Content-Disposition': 'attachment; filename=facturas_extraidas.xlsx',
-    });
-    res.send(fs.readFileSync(ruta));
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-router.post('/simple/asociar', async (req, res) => {
-  try {
-    const { empresaId, proyectoId, periodo } = req.body;
-    if (!empresaId || !proyectoId || !periodo) return res.status(400).json({ error: 'Faltan datos' });
-
-    // El empresaId llega por body, asi que esta ruta no pasa por cargarAcceso:
-    // verificamos el permiso de escritura sobre facturas a mano.
-    const acceso = await accesoService.getAcceso(req.user, empresaId);
-    if (!acceso.lectura) return res.status(404).json({ error: 'Empresa no encontrada' });
-    if (!puedeEscribir(acceso, 'facturas')) {
-      return res.status(403).json({ error: 'No tenes permiso de escritura sobre "facturas" en esta empresa' });
-    }
-    // Esta ruta no cuelga de /api/empresas/:empresaId, asi que tampoco pasa por
-    // cargarProyecto: el proyecto hay que atarlo a la empresa a mano.
-    if (!(await proyectoPerteneceAEmpresa(proyectoId, empresaId))) {
-      return res.status(404).json({ error: 'Proyecto no encontrado' });
-    }
-
-    let resultadosSimples = [];
-    try {
-      const buffer = await storageService.downloadFile(simpleResultsKey(req));
-      resultadosSimples = JSON.parse(buffer.toString('utf-8'));
-    } catch { }
-
-    if (!resultadosSimples.length) {
-      return res.status(400).json({ error: 'No hay facturas procesadas para asociar' });
-    }
-
-    const folderPath = `proyectos/${empresaId}/${proyectoId}/${periodo}`;
-    const copyResults = await Promise.allSettled(
-      resultadosSimples
-        .filter(r => r.archivo)
-        .map(r =>
-          storageService.downloadFile(`${simpleDir(req)}/${r.archivo}`)
-            .then(srcBuf =>
-              storageService.uploadFile(`${folderPath}/${r.archivo}`, srcBuf, getMimeType(r.archivo))
-            )
-        )
-    );
-    const copiados = copyResults.filter(r => r.status === 'fulfilled').length;
-
-    // guardarResultadosDB completa fecha_ejecucion con la fecha del comprobante si falta
-    const resultadosDestino = await leerResultadosDB(proyectoId, periodo);
-    const destinoMap = new Map(resultadosDestino.map(r => [r.archivo, r]));
-
-    for (const r of resultadosSimples) {
-      destinoMap.set(r.archivo, r);
-    }
-
-    const combinedResults = Array.from(destinoMap.values());
-    await guardarResultadosDB(proyectoId, periodo, combinedResults);
-
-    try { await storageService.deleteFile(simpleResultsKey(req)); } catch (e) { }
-
-    res.json({ success: true, asociados: resultadosSimples.length, archivos_copiados: copiados });
-  } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
