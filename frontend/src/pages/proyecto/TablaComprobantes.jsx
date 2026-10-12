@@ -1,0 +1,434 @@
+import { useEffect, useMemo, useState } from 'react'
+import { Download, Check, Plus, RefreshCw } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { LoadingState, Spinner } from '@/components/ui/loading'
+import { cn } from '@/lib/utils'
+import { facturas as factApi } from '@/lib/api'
+import { anioDe } from '@/lib/fechas'
+import { fmtMonto } from '@/lib/inversion'
+import { etiquetaEjercicio } from '@/lib/proyecto'
+import { CATEGORIAS, TIPOS_COMPROBANTE, MONEDAS } from '@/lib/constantes'
+import { CellDropdown, CellDatePicker } from './CeldasEditables'
+
+const SORT_OPTIONS = [
+  { label: 'N° Comprobante', field: 'numero_factura' },
+  { label: 'Proveedor', field: 'proveedor' },
+  { label: 'Fecha', field: 'fecha' },
+  { label: 'Monto', field: 'monto' },
+  { label: 'Moneda', field: 'moneda' },
+  { label: 'Categoría', field: 'categoria' },
+  { label: 'Tipo', field: 'tipo_comprobante' },
+  { label: 'Ejercicio', field: 'fecha_ejecucion' },
+  { label: 'Actualización', field: 'updatedAt' },
+]
+
+const COLUMNAS = [
+  { label: 'Descripción', field: null },
+  { label: 'N° Comprobante', field: 'numero_factura' },
+  { label: 'Proveedor', field: 'proveedor' },
+  { label: 'Fecha', field: 'fecha' },
+  { label: 'Monto', field: 'monto' },
+  { label: 'Moneda', field: 'moneda' },
+  { label: 'Categoría', field: 'categoria' },
+  { label: 'Tipo', field: 'tipo_comprobante' },
+  { label: 'Ejercicio', field: 'fecha_ejecucion' },
+  { label: 'Estado', field: null },
+]
+
+const conVacio = (opciones) => [{ v: '', l: '--' }, ...opciones]
+
+const FILA_NUEVA = {
+  descripcion: '', numero_factura: '', proveedor: '', rut: '',
+  fecha: '', monto: null, moneda: 'UYU', cantidad: 1,
+  categoria: null, tipo_comprobante: 'Factura', rut_receptor: '', razon_social_receptor: '',
+  texto_extraido: false,
+}
+
+/**
+ * Tabla de comprobantes de un período, con edición en planilla, orden,
+ * exportación al cuadro COMAP y la cotización usada.
+ */
+export function TablaComprobantes({
+  empresaId, proyectoId, periodo, empresa, comprobantes, cargando,
+  cotizacion, cargandoCotizacion, puedeEditar, anioBase, opcionesEjercicio, onActualizar,
+}) {
+  const [isEditing, setIsEditing] = useState(false)
+  const [editedResults, setEditedResults] = useState([])
+  const [savingEdit, setSavingEdit] = useState(false)
+  const [selectedRows, setSelectedRows] = useState([])
+  const [reprocesando, setReprocesando] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [openDropdown, setOpenDropdown] = useState(null)
+  const [sortField, setSortField] = useState('numero_factura')
+  const [sortDir, setSortDir] = useState('desc')
+  const [sortOpen, setSortOpen] = useState(false)
+
+  useEffect(() => {
+    setEditedResults(comprobantes || [])
+  }, [comprobantes])
+
+  const sortedDisplayResults = useMemo(() => {
+    const arr = isEditing ? editedResults : comprobantes
+    if (!sortField || !arr) return arr
+    return [...arr].sort((a, b) => {
+      const av = a[sortField] ?? ''
+      const bv = b[sortField] ?? ''
+      const cmp = typeof av === 'number' && typeof bv === 'number'
+        ? av - bv
+        : String(av).localeCompare(String(bv))
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+  }, [comprobantes, editedResults, isEditing, sortField, sortDir])
+
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortField(field)
+      setSortDir('asc')
+    }
+  }
+
+  const handleEditToggle = () => {
+    setEditedResults(isEditing ? comprobantes || [] : sortedDisplayResults || comprobantes || [])
+    setSelectedRows([])
+    setIsEditing(!isEditing)
+  }
+
+  const handleFieldChange = (id, field, value) => {
+    const numerico = field === 'monto' || field === 'cantidad'
+    setEditedResults(current =>
+      current.map(item =>
+        item.id === id
+          ? { ...item, [field]: numerico ? (value === '' ? null : Number(value)) : value }
+          : item
+      )
+    )
+  }
+
+  const handleSaveEdit = async () => {
+    setSavingEdit(true)
+    try {
+      onActualizar(await factApi.updateResults(empresaId, proyectoId, periodo, editedResults))
+      setSelectedRows([])
+      setIsEditing(false)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
+  const handleToggleRow = (id) => {
+    setSelectedRows(current => (current.includes(id) ? current.filter(x => x !== id) : [...current, id]))
+  }
+
+  const handleToggleAllRows = () => {
+    setSelectedRows(selectedRows.length === editedResults.length ? [] : editedResults.map(r => r.id))
+  }
+
+  const handleDeleteSelected = () => {
+    if (!selectedRows.length) return
+    setEditedResults(current => current.filter(r => !selectedRows.includes(r.id)))
+    setSelectedRows([])
+  }
+
+  const handleReprocesarSeleccionadas = async () => {
+    const archivos = selectedRows
+      .map(id => editedResults.find(r => r.id === id)?.archivo)
+      .filter(Boolean)
+    if (!archivos.length) return
+    setReprocesando(true)
+    try {
+      const nuevos = await factApi.reprocesar(empresaId, proyectoId, periodo, archivos)
+      setEditedResults(current => [...current.filter(r => !selectedRows.includes(r.id)), ...nuevos])
+      setSelectedRows([])
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setReprocesando(false)
+    }
+  }
+
+  const handleAddRow = () => setEditedResults(current => [...current, { ...FILA_NUEVA }])
+
+  const handleExport = async () => {
+    if (!empresa?.fecha_balance) {
+      const ok = window.confirm('La empresa no tiene fecha de balance cargada.\n¿Querés continuar de todas formas?')
+      if (!ok) return
+    }
+    setExporting(true)
+    try {
+      const blob = await factApi.exportExcel(empresaId, proyectoId, periodo)
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = `comap_${periodo}.xlsx`
+      a.click()
+    } catch (err) { console.error(err) }
+    finally { setExporting(false) }
+  }
+
+  const btn = 'h-[28px] text-[11px] gap-1.5'
+  const cellEdit = 'p-0 border-r border-b border-border/25 last:border-r-0'
+  const inputEdit = 'w-full min-h-[34px] bg-transparent text-foreground px-2 py-1 text-[12px] outline-none focus:bg-primary/5 placeholder:text-muted-foreground/40'
+
+  const dropdown = (r, campo, value, options, toValue = (v) => v) => (
+    <CellDropdown
+      id={`${r.id}-${campo}`}
+      value={value}
+      options={options}
+      onChange={(v) => handleFieldChange(r.id, campo, toValue(v))}
+      open={openDropdown === `${r.id}-${campo}`}
+      onOpen={setOpenDropdown}
+    />
+  )
+
+  return (
+    <div className="bg-card/30 border border-border/50 rounded-xl p-5 shadow-sm">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-5 gap-3">
+        <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Resultados</h2>
+        <div className="flex gap-2 flex-wrap">
+          {!isEditing ? (
+            <>
+              {puedeEditar && (
+                <Button onClick={handleEditToggle} disabled={cargando} variant="outline" size="sm" className={btn}>
+                  Editar
+                </Button>
+              )}
+              <Button
+                onClick={handleExport}
+                disabled={exporting || !comprobantes?.length}
+                variant="default"
+                size="sm"
+                className={cn(btn, 'bg-[#22b86c] hover:bg-[#1aa35f] text-white')}
+              >
+                {exporting ? <Spinner size={12} /> : <Download size={13} />}
+                Exportar COMAP
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button onClick={handleAddRow} variant="outline" size="sm" className={btn}>
+                <Plus size={13} />
+                Agregar
+              </Button>
+              <Button onClick={handleSaveEdit} disabled={savingEdit} variant="default" size="sm" className={btn}>
+                {savingEdit ? <Spinner size={12} /> : <Check size={13} />}
+                Ok
+              </Button>
+              <Button onClick={handleEditToggle} disabled={savingEdit} variant="outline" size="sm" className={btn}>
+                Cancelar
+              </Button>
+              {/* Ojo: selectedRows guarda ids y esto indexa por posición, así que
+                  el botón queda siempre deshabilitado. Reprocesar depende de la
+                  migración de archivos y se retoma después. */}
+              <Button
+                onClick={handleReprocesarSeleccionadas}
+                disabled={!selectedRows.some(i => editedResults[i]?.archivo) || reprocesando}
+                variant="secondary"
+                size="sm"
+                className={btn}
+              >
+                {reprocesando ? <Spinner size={12} /> : <RefreshCw size={13} />}
+                Reprocesar seleccionadas
+              </Button>
+              <Button
+                onClick={handleDeleteSelected}
+                disabled={!selectedRows.length || savingEdit}
+                variant="destructive"
+                size="sm"
+                className={btn}
+              >
+                Eliminar seleccionadas
+              </Button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Cotización y orden */}
+      <div className="flex items-center justify-between gap-3 mb-4 text-[12px] text-muted-foreground">
+        <div className="flex items-center gap-3">
+          <span className="font-semibold uppercase tracking-wider text-[10px]">Cotización</span>
+          {cargandoCotizacion ? (
+            <span className="text-muted-foreground/60">Consultando BCU...</span>
+          ) : cotizacion ? (
+            <>
+              <span className="bg-card border border-border/60 rounded px-2 py-0.5">
+                USD <span className="text-foreground font-semibold">${cotizacion.valor_usd.toFixed(2)}</span>
+              </span>
+              <span className="bg-card border border-border/60 rounded px-2 py-0.5">
+                UI <span className="text-foreground font-semibold">${cotizacion.valor_ui.toFixed(2)}</span>
+              </span>
+              <span className="text-[11px] text-muted-foreground/70">al {cotizacion.fecha}</span>
+            </>
+          ) : (
+            <span className="text-destructive/70 text-[11px]">Servicio BCU no disponible</span>
+          )}
+        </div>
+        <div className="relative">
+          <button
+            onClick={() => setSortOpen(o => !o)}
+            className="flex items-center gap-1.5 px-2.5 h-7 rounded border border-border/60 bg-card hover:bg-accent text-[11px] text-muted-foreground hover:text-foreground transition-all"
+          >
+            {SORT_OPTIONS.find(o => o.field === sortField)?.label ?? 'Ordenar'}
+            <span className="text-[10px]">{sortDir === 'asc' ? '↑' : '↓'}</span>
+          </button>
+          {sortOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setSortOpen(false)} />
+              <div className="absolute right-0 top-full mt-1 z-20 bg-popover border border-border rounded-lg shadow-lg py-1 min-w-40">
+                {SORT_OPTIONS.map(({ label, field }) => (
+                  <button
+                    key={field}
+                    onClick={() => { handleSort(field); setSortOpen(false) }}
+                    className={cn(
+                      'w-full text-left px-3 py-1.5 text-[12px] flex items-center justify-between hover:bg-accent transition-colors',
+                      sortField === field ? 'text-foreground font-medium' : 'text-muted-foreground'
+                    )}
+                  >
+                    {label}
+                    {sortField === field && <span className="text-[10px] ml-2">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {cargando && <LoadingState message="Cargando resultados guardados..." />}
+
+      {comprobantes && !cargando && (
+        <div>
+          {comprobantes.length > 0 || isEditing ? (
+            <div className={cn('overflow-x-auto shadow-sm', isEditing ? 'border border-border/60 rounded-lg' : 'border border-border/80 rounded-lg')}>
+              <table className={cn('w-full text-[12px] min-w-[860px]', isEditing && 'border-collapse')}>
+                <thead>
+                  <tr className={cn('border-b', isEditing ? 'border-border/50 bg-muted/30' : 'border-border/60')}>
+                    {isEditing && (
+                      <th className="w-8 px-3 py-2 border-r border-border/30">
+                        <input
+                          type="checkbox"
+                          aria-label="Seleccionar todos"
+                          checked={editedResults.length > 0 && selectedRows.length === editedResults.length}
+                          onChange={handleToggleAllRows}
+                        />
+                      </th>
+                    )}
+                    {COLUMNAS.map(({ label, field }) => (
+                      <th
+                        key={label}
+                        onClick={field ? () => handleSort(field) : undefined}
+                        className={cn(
+                          'py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground select-none',
+                          isEditing ? 'px-2 border-r border-border/30 last:border-r-0' : 'px-3',
+                          field && 'cursor-pointer hover:text-foreground transition-colors'
+                        )}
+                      >
+                        {label}
+                        {field && sortField === field && (
+                          <span className="ml-1 opacity-70">{sortDir === 'asc' ? '↑' : '↓'}</span>
+                        )}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className={cn(isEditing ? '' : 'divide-y divide-border/50')}>
+                  {(sortedDisplayResults || []).map((r, i) => {
+                    const completado = r.proveedor && r.fecha && r.monto
+                    const anioEjec = anioDe(r.fecha_ejecucion)
+
+                    return (
+                      <tr key={r.id ?? i} className={cn(isEditing ? 'last:border-b-0' : 'bg-card hover:bg-accent/30 transition-colors')}>
+                        {isEditing && (
+                          <td className="w-8 px-3 border-r border-b border-border/25">
+                            <input
+                              type="checkbox"
+                              aria-label="Seleccionar fila"
+                              checked={selectedRows.includes(r.id)}
+                              onChange={() => handleToggleRow(r.id)}
+                            />
+                          </td>
+                        )}
+                        <td className={isEditing ? cellEdit : 'px-3 py-2.5 max-w-[220px]'}>
+                          {isEditing ? (
+                            <input value={r.descripcion || ''} onChange={(e) => handleFieldChange(r.id, 'descripcion', e.target.value)} className={inputEdit} />
+                          ) : (
+                            <div className="truncate" title={r.descripcion || ''}>{r.descripcion || '--'}</div>
+                          )}
+                        </td>
+                        <td className={isEditing ? cellEdit : 'px-3 py-2.5 whitespace-nowrap'}>
+                          {isEditing ? (
+                            <input value={r.numero_factura || ''} onChange={(e) => handleFieldChange(r.id, 'numero_factura', e.target.value)} className={inputEdit} />
+                          ) : (
+                            r.numero_factura || '--'
+                          )}
+                        </td>
+                        <td className={isEditing ? cellEdit : 'px-3 py-2.5'}>
+                          {isEditing ? (
+                            <input value={r.proveedor || ''} onChange={(e) => handleFieldChange(r.id, 'proveedor', e.target.value)} className={inputEdit} />
+                          ) : (
+                            r.proveedor || '--'
+                          )}
+                        </td>
+                        <td className={isEditing ? cellEdit : 'px-3 py-2.5 whitespace-nowrap'}>
+                          {isEditing ? (
+                            <CellDatePicker
+                              id={`fecha-${r.id}`}
+                              value={r.fecha || ''}
+                              onChange={(v) => handleFieldChange(r.id, 'fecha', v)}
+                              open={openDropdown === `fecha-${r.id}`}
+                              onOpen={setOpenDropdown}
+                            />
+                          ) : (
+                            r.fecha || '--'
+                          )}
+                        </td>
+                        <td className={isEditing ? cellEdit : 'px-3 py-2.5 text-right'}>
+                          {isEditing ? (
+                            <input type="number" step="0.01" value={r.monto ?? ''} onChange={(e) => handleFieldChange(r.id, 'monto', e.target.value)} className={cn(inputEdit, 'text-right w-24')} />
+                          ) : (
+                            fmtMonto(r.monto)
+                          )}
+                        </td>
+                        <td className={isEditing ? cellEdit : 'px-3 py-2.5'}>
+                          {isEditing ? dropdown(r, 'moneda', (r.moneda || '').trim(), conVacio(MONEDAS)) : (r.moneda || '--')}
+                        </td>
+                        <td className={isEditing ? cellEdit : 'px-3 py-2.5'}>
+                          {isEditing ? dropdown(r, 'categoria', r.categoria || '', conVacio(CATEGORIAS)) : (r.categoria || '--')}
+                        </td>
+                        <td className={isEditing ? cellEdit : 'px-3 py-2.5 whitespace-nowrap'}>
+                          {isEditing ? dropdown(r, 'tipo_comprobante', r.tipo_comprobante || '', conVacio(TIPOS_COMPROBANTE)) : (r.tipo_comprobante || '--')}
+                        </td>
+                        <td className={isEditing ? cellEdit : 'px-3 py-2.5 whitespace-nowrap'}>
+                          {isEditing
+                            ? dropdown(r, 'fecha_ejecucion', anioEjec ? String(anioEjec) : '', opcionesEjercicio, (v) => (v ? `01/01/${v}` : null))
+                            : (anioEjec ? etiquetaEjercicio(anioEjec, anioBase) : '--')}
+                        </td>
+                        <td className="px-3 py-2.5 whitespace-nowrap">
+                          {completado
+                            ? <Badge variant="secondary" className="bg-success/15 text-success border-transparent font-medium px-2 h-5 text-[10px]">✓ Completo</Badge>
+                            : <Badge variant="secondary" className="bg-warning/15 text-warning border-transparent font-medium px-2 h-5 text-[10px]">⚠ Incompleto</Badge>}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="border border-dashed border-border/60 rounded-lg py-12 text-center bg-card/5">
+              {isEditing ? (
+                <p className="text-[13px] text-muted-foreground">Usá <strong>+ Agregar</strong> para añadir la primera factura.</p>
+              ) : (
+                <p className="text-[13px] text-muted-foreground">No hay facturas cargadas. Usá <strong>Editar</strong> o <strong>Importar</strong>.</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
