@@ -2,6 +2,7 @@ const { Router } = require('express');
 const empresaService = require('./empresa.service');
 const accesoService = require('../acceso/acceso.service');
 const { requireEscritura } = require('../../middleware/acceso.middleware');
+const { requireMaster } = require('../../middleware/auth.middleware');
 const { limpiarRut, problemaRut } = require('../../common/utils/rut');
 
 const router = Router();
@@ -47,6 +48,28 @@ router.get('/:empresaId', async (req, res) => {
 router.put('/:empresaId', requireEscritura('empresa'), async (req, res) => {
   try {
     const ok = await empresaService.actualizar(req.params.empresaId, req.body);
+    if (!ok) return res.status(404).json({ error: 'Empresa no encontrada' });
+    res.json({ ok: true });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/empresas/:empresaId/borrado
+// Cuánto se pierde al borrar: sólo lo pide quien puede borrar
+router.get('/:empresaId/borrado', requireMaster, async (req, res) => {
+  try {
+    res.json(await empresaService.resumenBorrado(req.params.empresaId));
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// DELETE /api/empresas/:empresaId
+// Exclusivo del administrador general: borra la empresa con todo lo suyo.
+router.delete('/:empresaId', requireMaster, async (req, res) => {
+  try {
+    const ok = await empresaService.eliminar(req.params.empresaId);
     if (!ok) return res.status(404).json({ error: 'Empresa no encontrada' });
     res.json({ ok: true });
   } catch(e) {

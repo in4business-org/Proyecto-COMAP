@@ -23,6 +23,7 @@ const prismaStub = {
     },
     findMany: async ({ where }) => FILAS.filter((f) => f.usuarioSub === where.usuarioSub),
     deleteMany: async () => ({ count: 0 }),
+    count: async () => 0,
     create: async ({ data }) => data,
   },
   empresa: {
@@ -34,6 +35,7 @@ const prismaStub = {
     findUnique: async ({ where }) =>
       EMPRESAS.find((e) => (where.id && e.id === where.id) || (where.rut && e.rut === where.rut)) || null,
     create: async ({ data }) => data,
+    delete: async ({ where }) => ({ id: where.id }),
     upsert: async () => ({}),
     update: async () => ({}),
     count: async () => EMPRESAS.length,
@@ -41,6 +43,7 @@ const prismaStub = {
   proyecto: {
     findMany: async () => [],
     count: async () => 0,
+    deleteMany: async () => ({ count: 0 }),
     create: async () => ({ id: 'p1' }),
     update: async () => ({}),
     // p1 pertenece a e1 y p2 a e2: asi podemos probar el cruce
@@ -49,8 +52,8 @@ const prismaStub = {
       return duenio[where.id] === where.empresaId ? { id: where.id } : null;
     },
   },
-  factura: { count: async () => 0, findMany: async () => [] },
-  checklistItem: { findMany: async () => [], upsert: async () => ({}) },
+  factura: { count: async () => 0, findMany: async () => [], deleteMany: async () => ({ count: 0 }) },
+  checklistItem: { findMany: async () => [], upsert: async () => ({}), count: async () => 0, deleteMany: async () => ({ count: 0 }) },
   $transaction: async (ops) => ops,
 };
 
@@ -204,6 +207,22 @@ function chequear(desc, ok, detalle) {
 
   r = await pedir('POST', '/api/empresas', MASTER);
   chequear('POST /api/empresas como master no da 403', r.status !== 403, `status ${r.status}`);
+
+  // ── Borrar empresa: sólo master ───────────────────────
+  FILAS = [{ usuarioSub: 'sub-user', empresaId: 'e1', escritura: ['empresa', 'proyectos', 'facturas', 'checklist', 'simulador'] }];
+  r = await pedir('DELETE', '/api/empresas/e1', USER);
+  chequear('DELETE empresa con escritura total pero sin ser master -> 403', r.status === 403, `status ${r.status}`);
+  r = await pedir('GET', '/api/empresas/e1/borrado', USER);
+  chequear('GET resumen de borrado sin ser master -> 403', r.status === 403, `status ${r.status}`);
+  r = await pedir('DELETE', '/api/empresas/e2', USER);
+  chequear('DELETE empresa ajena -> 404', r.status === 404, `status ${r.status}`);
+  r = await pedir('GET', '/api/empresas/e1/borrado', MASTER);
+  chequear('GET resumen de borrado como master -> 200', r.status === 200 && r.body?.proyectos === 0, JSON.stringify(r));
+  r = await pedir('DELETE', '/api/empresas/e1', MASTER);
+  chequear('DELETE empresa como master -> 200', r.status === 200, JSON.stringify(r));
+  r = await pedir('DELETE', '/api/empresas/no-existe', MASTER);
+  chequear('DELETE empresa inexistente como master -> 404', r.status === 404, `status ${r.status}`);
+  FILAS = [{ usuarioSub: 'sub-user', empresaId: 'e1', escritura: [] }];
 
   // ── Alta de empresa: validaciones ─────────────────────
   r = await pedir('POST', '/api/empresas', MASTER, { rut: '211003420018', nombre: 'X' });

@@ -68,6 +68,42 @@ class EmpresaService {
       return false;
     }
   }
+
+  /** Qué se pierde si se borra la empresa, para mostrarlo antes de confirmar */
+  async resumenBorrado(empresaId) {
+    const proyectos = await prisma.proyecto.findMany({ where: { empresaId }, select: { id: true } });
+    const ids = proyectos.map((p) => p.id);
+    const [comprobantes, documentos, personas] = await Promise.all([
+      prisma.factura.count({ where: { proyectoId: { in: ids } } }),
+      prisma.checklistItem.count({ where: { proyectoId: { in: ids }, archivo: { not: null } } }),
+      prisma.usuarioEmpresa.count({ where: { empresaId } }),
+    ]);
+    return { proyectos: ids.length, comprobantes, documentos, personas };
+  }
+
+  /**
+   * Borra la empresa y todo lo que cuelga de ella en la base: proyectos,
+   * comprobantes, ítems del checklist y los accesos de usuarios. Va en una
+   * transacción para no dejar nada a medias.
+   *
+   * No toca S3 (los archivos subidos quedan en el bucket) ni Cognito (las
+   * cuentas de las personas siguen, sólo pierden el acceso a esta empresa).
+   * @returns {Promise<boolean>} false si la empresa no existe
+   */
+  async eliminar(empresaId) {
+    const empresa = await prisma.empresa.findUnique({ where: { id: empresaId }, select: { id: true } });
+    if (!empresa) return false;
+    const proyectos = await prisma.proyecto.findMany({ where: { empresaId }, select: { id: true } });
+    const ids = proyectos.map((p) => p.id);
+    await prisma.$transaction([
+      prisma.factura.deleteMany({ where: { proyectoId: { in: ids } } }),
+      prisma.checklistItem.deleteMany({ where: { proyectoId: { in: ids } } }),
+      prisma.proyecto.deleteMany({ where: { empresaId } }),
+      prisma.usuarioEmpresa.deleteMany({ where: { empresaId } }),
+      prisma.empresa.delete({ where: { id: empresaId } }),
+    ]);
+    return true;
+  }
 }
 
 module.exports = new EmpresaService();
