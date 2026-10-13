@@ -108,6 +108,9 @@ export const empresas = {
   create: (rut, nombre, datos = {}) =>
     request('/empresas', { method: 'POST', body: JSON.stringify({ ...datos, rut, nombre }) }),
   update: (id, data) => request(`/empresas/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  // Sólo administrador general
+  resumenBorrado: (id) => request(`/empresas/${id}/borrado`),
+  eliminar: (id) => request(`/empresas/${id}`, { method: 'DELETE' }),
 };
 
 // -- Proyectos

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, Link, useSearchParams, useNavigate } from 'react-router-dom'
 import {
-  AlertTriangle, ArrowRight, ClipboardCheck, FolderOpen, Plus, ReceiptText, Settings, Users,
+  AlertTriangle, ArrowRight, ClipboardCheck, FolderOpen, Plus, ReceiptText, Settings, Trash2, Users,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -21,6 +21,7 @@ import { useComprobantes } from './proyecto/useComprobantes'
 import { DatosEmpresaDialog } from './empresa/DatosEmpresaDialog'
 import { NuevoProyectoDialog, ConfigurarProyectoDialog } from './empresa/ProyectoDialogs'
 import { SimuladorDialog } from './empresa/SimuladorDialog'
+import { EliminarEmpresaDialog } from './empresa/EliminarEmpresaDialog'
 
 const titulo = 'text-[11px] font-semibold uppercase tracking-widest text-muted-foreground'
 
@@ -100,7 +101,7 @@ export default function EmpresaDetail() {
   const { empresaId } = useParams()
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
-  const { puedeEscribir, isAdmin } = useAuth()
+  const { puedeEscribir, isAdmin, isMaster } = useAuth()
   const puedeEditarEmpresa = puedeEscribir(empresaId, 'empresa')
   const puedeEditarProyectos = puedeEscribir(empresaId, 'proyectos')
 
@@ -109,7 +110,7 @@ export default function EmpresaDetail() {
   const [loading, setLoading] = useState(true)
   const [checklist, setChecklist] = useState(null)
   const [cotizacion, setCotizacion] = useState(null)
-  const [dialogo, setDialogo] = useState(null) // 'datos' | 'nuevo' | 'simulador'
+  const [dialogo, setDialogo] = useState(null) // 'datos' | 'nuevo' | 'simulador' | 'eliminar'
   const [configurando, setConfigurando] = useState(null)
 
   const cargarProyectos = () => projApi.list(empresaId).then(setProyectos)
@@ -195,6 +196,16 @@ export default function EmpresaDetail() {
           {puedeEditarProyectos && (
             <Button size="sm" onClick={() => setDialogo('nuevo')}>
               <Plus size={14} aria-hidden="true" /> Nuevo proyecto
+            </Button>
+          )}
+          {isMaster && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setDialogo('eliminar')}
+              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+            >
+              <Trash2 size={14} aria-hidden="true" /> Eliminar empresa
             </Button>
           )}
         </div>
@@ -371,6 +382,17 @@ export default function EmpresaDetail() {
           avisarCambio('proyectos', empresaId)
         }}
       />
+      {isMaster && (
+        <EliminarEmpresaDialog
+          empresa={empresa}
+          open={dialogo === 'eliminar'}
+          onClose={() => setDialogo(null)}
+          onEliminada={() => {
+            avisarCambio('empresas')
+            navigate('/empresas', { replace: true })
+          }}
+        />
+      )}
       {proyecto && (
         <SimuladorDialog
           open={dialogo === 'simulador'}

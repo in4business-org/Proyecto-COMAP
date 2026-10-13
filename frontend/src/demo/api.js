@@ -114,6 +114,18 @@ export const empresas = {
     return wait({ empresa_id: id })
   },
   update: (id, data) => { Object.assign(db.empresas.find((e) => e.id === id), data); return wait({ ok: true }) },
+  resumenBorrado: (id) => {
+    const proys = db.proyectos[id] || []
+    const comprobantes = proys.reduce((n, p) => n + Object.values(db.facturas[p.id] || {}).flat().length, 0)
+    const documentos = proys.reduce((n, p) => n + Object.values(db.checklist[p.id] || {}).filter((i) => i.archivo).length, 0)
+    return wait({ proyectos: proys.length, comprobantes, documentos, personas: id === 'e1' ? 2 : 0 })
+  },
+  eliminar: (id) => {
+    for (const p of db.proyectos[id] || []) { delete db.facturas[p.id]; delete db.checklist[p.id] }
+    delete db.proyectos[id]
+    db.empresas = db.empresas.filter((e) => e.id !== id)
+    return wait({ ok: true })
+  },
 }
 
 export const proyectos = {
