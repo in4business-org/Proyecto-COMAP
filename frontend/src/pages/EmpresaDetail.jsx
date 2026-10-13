@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, Link, useSearchParams, useNavigate } from 'react-router-dom'
 import {
-  AlertTriangle, ArrowRight, ClipboardCheck, FolderOpen, Plus, ReceiptText, Settings, Trash2, Users,
+  AlertTriangle, ArrowRight, FolderOpen, MoreHorizontal, Plus, Settings, Trash2, Users,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { LoadingState, EmptyState } from '@/components/ui/loading'
+import { Menu, MenuItem, MenuSeparador } from '@/components/ui/menu'
 import { ResumenInversion } from '@/components/inversion/ResumenInversion'
 import { cn } from '@/lib/utils'
 import { empresas as empApi, proyectos as projApi, checklist as checkApi, cotizaciones as cotApi } from '@/lib/api'
-import { anioDe } from '@/lib/fechas'
+import { anioDe, fmtFecha } from '@/lib/fechas'
 import { calcularResumen } from '@/lib/inversion'
 import { periodosDeProyecto, etiquetaPeriodo } from '@/lib/proyecto'
 import { revisarComprobantes } from '@/lib/revision'
@@ -22,8 +23,6 @@ import { DatosEmpresaDialog } from './empresa/DatosEmpresaDialog'
 import { NuevoProyectoDialog, ConfigurarProyectoDialog } from './empresa/ProyectoDialogs'
 import { SimuladorDialog } from './empresa/SimuladorDialog'
 import { EliminarEmpresaDialog } from './empresa/EliminarEmpresaDialog'
-
-const titulo = 'text-[11px] font-semibold uppercase tracking-widest text-muted-foreground'
 
 /** Proyecto que se muestra si la URL no dice cuál: el más nuevo */
 function proyectoPorDefecto(proyectos) {
@@ -47,53 +46,34 @@ function Progreso({ valor, total, className }) {
 }
 
 /** Acceso grande a un paso: checklist o comprobantes */
-function PasoCard({ to, icono: Icono, iconoClass, badge, titulo: t, descripcion, progreso, resumen, destacada }) {
+function PasoCard({ to, paso, badge, titulo, descripcion, progreso, resumen, detalle, destacada }) {
   return (
     <Link
       to={to}
       className={cn(
-        'group flex flex-col gap-4 rounded-xl border bg-card p-5 shadow-sm transition-colors hover:border-primary/50',
-        destacada ? 'border-primary/60' : 'border-border'
+        'group flex flex-col gap-5 rounded-xl border bg-card p-6 shadow-sm transition-colors hover:border-primary/50',
+        destacada ? 'border-primary/50' : 'border-border'
       )}
     >
-      <div className="flex items-start justify-between gap-2">
-        <span className={cn('flex size-10 items-center justify-center rounded-lg', iconoClass)}>
-          <Icono size={20} strokeWidth={1.8} aria-hidden="true" />
-        </span>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[13px] text-muted-foreground">Paso {paso}</span>
         {badge}
       </div>
       <div>
-        <h3 className="text-lg font-medium">{t}</h3>
-        <p className="text-sm text-muted-foreground">{descripcion}</p>
+        <h3 className="text-lg font-medium">{titulo}</h3>
+        <p className="mt-0.5 text-sm text-muted-foreground">{descripcion}</p>
       </div>
-      <div className="mt-auto space-y-2.5">
+      <div className="mt-auto space-y-3">
         {progreso}
-        <div className="flex items-end justify-between gap-2 text-[12px] text-muted-foreground">
-          <span className="line-clamp-2">{resumen}</span>
+        <div className="flex items-center justify-between gap-3 text-[13px]">
+          <span className="text-foreground">{resumen}</span>
           <span className="flex items-center gap-1 font-medium text-primary shrink-0">
-            Abrir <ArrowRight size={13} className="transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+            Abrir <ArrowRight size={14} className="transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
           </span>
         </div>
+        {detalle && <p className="text-[12px] text-muted-foreground line-clamp-1">{detalle}</p>}
       </div>
     </Link>
-  )
-}
-
-/** Acceso secundario: plan de ejecución, simulador */
-function AccesoSecundario({ titulo: t, descripcion, ...props }) {
-  const Comp = props.to ? Link : 'button'
-  return (
-    <Comp
-      type={props.to ? undefined : 'button'}
-      {...props}
-      className="flex w-full items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3.5 text-left shadow-sm transition-colors hover:border-primary/50 cursor-pointer"
-    >
-      <span>
-        <span className="block text-sm font-medium">{t}</span>
-        <span className="block text-[12px] text-muted-foreground">{descripcion}</span>
-      </span>
-      <ArrowRight size={14} className="text-primary shrink-0" aria-hidden="true" />
-    </Comp>
   )
 }
 
@@ -169,62 +149,67 @@ export default function EmpresaDetail() {
   const listos = aplicables.filter((i) => i.estado === 'completado').length
   const siguiente = aplicables.find((i) => i.estado === 'pendiente')
   const checklistCompleto = checklist && aplicables.length > 0 && listos === aplicables.length
+  const hayMenu = isAdmin || isMaster
 
   return (
-    <div className="animate-fade-up space-y-7">
-      {/* Encabezado */}
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3 min-w-0">
+    <div className="animate-fade-up space-y-10">
+      {/* Encabezado: quién es, qué le falta y las acciones */}
+      <header className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex items-start gap-4 min-w-0">
           <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground font-semibold">
             {iniciales(empresa.nombre)}
           </span>
-          <div className="min-w-0">
-            <h1 className="text-xl font-medium truncate">{empresa.nombre}</h1>
+          <div className="min-w-0 space-y-1">
+            <h1 className="text-2xl font-medium leading-tight truncate">{empresa.nombre}</h1>
             <p className="text-[13px] text-muted-foreground truncate">
               <span className="font-mono">{empresa.rut}</span>
               {empresa.tipo_contribuyente && ` · ${empresa.tipo_contribuyente}`}
             </p>
+            {faltan.length > 0 && (
+              <p className="text-[13px] text-muted-foreground">
+                <AlertTriangle size={13} className="mr-1.5 inline text-warning align-[-2px]" aria-hidden="true" />
+                Faltan datos para presentar: {new Intl.ListFormat('es', { type: 'conjunction' }).format(faltan)}.
+                {puedeEditarEmpresa && (
+                  <button type="button" onClick={() => setDialogo('datos')} className="ml-1.5 font-medium text-primary underline-offset-2 hover:underline cursor-pointer">
+                    Completar
+                  </button>
+                )}
+              </p>
+            )}
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => setDialogo('datos')}>Datos de la empresa</Button>
-          {isAdmin && (
-            <Button variant="outline" size="sm" onClick={() => navigate('/admin')}>
-              <Users size={14} aria-hidden="true" /> Personas con acceso
-            </Button>
-          )}
           {puedeEditarProyectos && (
             <Button size="sm" onClick={() => setDialogo('nuevo')}>
               <Plus size={14} aria-hidden="true" /> Nuevo proyecto
             </Button>
           )}
-          {isMaster && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setDialogo('eliminar')}
-              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+          {hayMenu && (
+            <Menu
+              trigger={({ props }) => (
+                <Button variant="ghost" size="icon" className="size-9" aria-label="Más acciones" {...props}>
+                  <MoreHorizontal size={18} />
+                </Button>
+              )}
             >
-              <Trash2 size={14} aria-hidden="true" /> Eliminar empresa
-            </Button>
+              {isAdmin && (
+                <MenuItem onClick={() => navigate('/admin')}>
+                  <Users size={15} aria-hidden="true" /> Personas con acceso
+                </MenuItem>
+              )}
+              {isMaster && (
+                <>
+                  {isAdmin && <MenuSeparador />}
+                  <MenuItem destructive onClick={() => setDialogo('eliminar')}>
+                    <Trash2 size={15} aria-hidden="true" /> Eliminar empresa
+                  </MenuItem>
+                </>
+              )}
+            </Menu>
           )}
         </div>
       </header>
-
-      {/* Datos que faltan */}
-      {faltan.length > 0 && (
-        <div className="flex flex-col gap-2 rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 sm:flex-row sm:items-center">
-          <AlertTriangle size={16} className="text-warning shrink-0" aria-hidden="true" />
-          <p className="flex-1 text-[13px]">
-            Faltan datos de la empresa: <strong className="font-semibold">{faltan.join(', ')}</strong>. Se usan para presentar.
-          </p>
-          {puedeEditarEmpresa && (
-            <button type="button" onClick={() => setDialogo('datos')} className="text-[13px] font-medium text-primary underline underline-offset-2 cursor-pointer self-start sm:self-auto">
-              Completar
-            </button>
-          )}
-        </div>
-      )}
 
       {proyectos.length === 0 ? (
         <Card>
@@ -239,115 +224,121 @@ export default function EmpresaDetail() {
         </Card>
       ) : (
         <>
-          {/* Proyectos */}
-          <section aria-labelledby="t-proyectos" className="space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <h2 id="t-proyectos" className={titulo}>Proyectos</h2>
+          {/* Qué proyecto y qué período se está mirando */}
+          <section aria-label="Proyecto y período" className="space-y-4">
+            <div className="flex items-center gap-2">
+              <div role="tablist" aria-label="Proyectos de la empresa" className="flex min-w-0 gap-1 overflow-x-auto">
+                {proyectos.map((p) => {
+                  const activo = p.id === proyecto?.id
+                  return (
+                    <button
+                      key={p.id}
+                      role="tab"
+                      aria-selected={activo}
+                      type="button"
+                      onClick={() => elegir({ proyecto: p.id, periodo: null })}
+                      className={cn(
+                        'shrink-0 rounded-lg px-3.5 py-2 text-left transition-colors cursor-pointer',
+                        activo ? 'bg-card shadow-sm ring-1 ring-border' : 'text-muted-foreground hover:bg-accent/60'
+                      )}
+                    >
+                      <span className={cn('block text-sm', activo ? 'font-medium text-foreground' : '')}>{nombreProyecto(p)}</span>
+                      <span className="block text-[12px] text-muted-foreground">
+                        {p.duracion_seguimiento || 0} años de control
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
               {puedeEditarProyectos && proyecto && (
-                <Button variant="ghost" size="sm" onClick={() => setConfigurando(proyecto)} className="h-8 text-[12px] text-muted-foreground">
-                  <Settings size={13} aria-hidden="true" /> Configurar proyecto
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-9 shrink-0 text-muted-foreground"
+                  onClick={() => setConfigurando(proyecto)}
+                  aria-label="Configurar proyecto"
+                  title="Configurar proyecto"
+                >
+                  <Settings size={16} />
                 </Button>
               )}
             </div>
-            <div role="tablist" aria-label="Proyectos de la empresa" className="flex gap-2 overflow-x-auto pb-1">
-              {proyectos.map((p) => {
-                const activo = p.id === proyecto?.id
-                return (
-                  <button
-                    key={p.id}
-                    role="tab"
-                    aria-selected={activo}
-                    type="button"
-                    onClick={() => elegir({ proyecto: p.id, periodo: null })}
-                    className={cn(
-                      'shrink-0 rounded-xl border px-4 py-2.5 text-left transition-colors cursor-pointer',
-                      activo ? 'border-primary bg-card shadow-sm' : 'border-border bg-card/50 hover:bg-card'
-                    )}
-                  >
-                    <span className="block text-sm font-medium">{nombreProyecto(p)}</span>
-                    <span className="block text-[12px] text-muted-foreground">
-                      Presentación {p.anio_presentacion || 'sin año'} · {p.duracion_seguimiento || 0} años de control
-                    </span>
-                  </button>
-                )
-              })}
+
+            <div className="flex items-center gap-3 overflow-x-auto">
+              <span className="text-[13px] text-muted-foreground shrink-0">Período</span>
+              <div className="inline-flex shrink-0 gap-0.5 rounded-lg bg-muted p-1">
+                {periodos.map((p) => {
+                  const activo = p === periodo
+                  return (
+                    <button
+                      key={p}
+                      type="button"
+                      aria-pressed={activo}
+                      onClick={() => elegir({ periodo: p === 'presentacion' ? null : p })}
+                      className={cn(
+                        'h-8 whitespace-nowrap rounded-md px-3 text-[13px] transition-colors cursor-pointer',
+                        activo ? 'bg-card font-medium text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                      )}
+                    >
+                      {etiquetaPeriodo(p, proyecto)}
+                    </button>
+                  )
+                })}
+              </div>
             </div>
           </section>
 
-          {/* Períodos */}
-          <Card className="flex flex-wrap items-center gap-2 px-4 py-3">
-            <span className="text-[13px] text-muted-foreground mr-1">Período:</span>
-            {periodos.map((p) => {
-              const activo = p === periodo
-              return (
-                <button
-                  key={p}
-                  type="button"
-                  aria-pressed={activo}
-                  onClick={() => elegir({ periodo: p === 'presentacion' ? null : p })}
-                  className={cn(
-                    'rounded-md border px-2.5 py-1 text-[12px] font-medium transition-colors cursor-pointer',
-                    activo ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:bg-accent'
-                  )}
-                >
-                  {etiquetaPeriodo(p, proyecto)}
-                </button>
-              )
-            })}
-            <span className="w-full sm:w-auto sm:ml-auto text-[12px] text-muted-foreground">
-              La presentación y cada año de control tienen sus propios comprobantes
-            </span>
-          </Card>
-
-          {/* Accesos */}
-          <section aria-label="Entrar a" className="grid gap-3 lg:grid-cols-[1fr_1fr_minmax(0,0.9fr)]">
-            <PasoCard
-              to={`${base}/checklist`}
-              icono={ClipboardCheck}
-              iconoClass="bg-accent text-primary"
-              destacada={!checklistCompleto}
-              badge={checklistCompleto
-                ? <Badge variant="success">Completo</Badge>
-                : <Badge>Empezá por acá</Badge>}
-              titulo="1 · Checklist de documentos"
-              descripcion="Los papeles de la empresa que pide el Ministerio"
-              progreso={<Progreso valor={listos} total={aplicables.length} className="bg-primary" />}
-              resumen={!checklist
-                ? 'Cargando...'
-                : `${listos} de ${aplicables.length} listos${siguiente ? ' · sigue: ' + siguiente.descripcion : ''}`}
-            />
-            <PasoCard
-              to={conPeriodo()}
-              icono={ReceiptText}
-              iconoClass="bg-warning/15 text-warning"
-              badge={revision.revisar > 0 && <Badge variant="warning">{revision.revisar} para revisar</Badge>}
-              titulo="2 · Comprobantes de inversión"
-              descripcion="Facturas y presupuestos de lo que se invierte"
-              progreso={<Progreso valor={revision.listo} total={revision.total} className="bg-warning" />}
-              resumen={revision.total === 0
-                ? 'Todavía no hay comprobantes cargados'
-                : `${revision.total} cargados · ${revision.listo} listos${revision.sin_archivo ? ` · ${revision.sin_archivo} sin archivo` : ''}`}
-            />
-            <div className="flex flex-col gap-3">
-              <AccesoSecundario to={conPeriodo({ vista: 'plan' })} titulo="Plan de ejecución" descripcion="Qué se invierte en cada año" />
-              <AccesoSecundario onClick={() => setDialogo('simulador')} titulo="Simulador de beneficios" descripcion="Cuánto podría exonerar la empresa" />
+          {/* Los dos pasos y los accesos secundarios */}
+          <section aria-label="Pasos" className="space-y-4">
+            <div className="grid gap-5 md:grid-cols-2">
+              <PasoCard
+                to={`${base}/checklist`}
+                paso={1}
+                destacada={!checklistCompleto}
+                badge={checklistCompleto
+                  ? <Badge variant="success">Completo</Badge>
+                  : <Badge>Empezá por acá</Badge>}
+                titulo="Checklist de documentos"
+                descripcion="Los papeles de la empresa que pide el Ministerio"
+                progreso={<Progreso valor={listos} total={aplicables.length} className="bg-primary" />}
+                resumen={!checklist ? 'Cargando...' : `${listos} de ${aplicables.length} listos`}
+                detalle={siguiente && `Sigue: ${siguiente.descripcion}`}
+              />
+              <PasoCard
+                to={conPeriodo()}
+                paso={2}
+                badge={revision.revisar > 0 && <Badge variant="warning">{revision.revisar} para revisar</Badge>}
+                titulo="Comprobantes de inversión"
+                descripcion="Facturas y presupuestos de lo que se invierte"
+                progreso={<Progreso valor={revision.listo} total={revision.total} className="bg-warning" />}
+                resumen={revision.total === 0 ? 'Todavía no hay comprobantes' : `${revision.listo} de ${revision.total} listos`}
+                detalle={revision.sin_archivo > 0 && `${revision.sin_archivo} sin PDF`}
+              />
+            </div>
+            <div className="flex flex-wrap gap-x-6 gap-y-2 px-1 text-sm">
+              <Link to={conPeriodo({ vista: 'plan' })} className="group inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground">
+                Plan de ejecución
+                <ArrowRight size={14} className="text-primary transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+              </Link>
+              <button type="button" onClick={() => setDialogo('simulador')} className="group inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground cursor-pointer">
+                Simulador de beneficios
+                <ArrowRight size={14} className="text-primary transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+              </button>
             </div>
           </section>
 
           {/* Resumen de la inversión */}
-          <section aria-labelledby="t-resumen" className="space-y-3">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <h2 id="t-resumen" className={titulo}>Resumen de la inversión · {etiquetaPeriodo(periodo, proyecto)}</h2>
-              {cotizacion && (
-                <span className="text-[12px] text-muted-foreground" title="UI = Unidades Indexadas, la unidad que usa la COMAP">
-                  En UI · cotización al {cotizacion.fecha}
-                </span>
-              )}
+          <section aria-labelledby="t-resumen" className="space-y-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+              <h2 id="t-resumen" className="text-base font-medium">Resumen de la inversión</h2>
+              <span className="text-[12px] text-muted-foreground" title="UI = Unidades Indexadas, la unidad que usa la COMAP">
+                {etiquetaPeriodo(periodo, proyecto)}{cotizacion && ` · en UI, cotización del ${fmtFecha(cotizacion.fecha)}`}
+              </span>
             </div>
             {resumen ? (
               <ResumenInversion resumen={resumen} onCategoria={(cat) => navigate(conPeriodo({ categoria: cat }))} />
             ) : (
-              <Card className="px-4 py-8 text-center text-[13px] text-muted-foreground">
+              <Card className="px-4 py-10 text-center text-[13px] text-muted-foreground">
                 {revision.total === 0
                   ? 'Cuando cargues comprobantes vas a ver acá cuánto se invierte, por año y por categoría.'
                   : 'No pudimos traer la cotización del BCU, así que no podemos pasar los montos a UI. Probá más tarde.'}

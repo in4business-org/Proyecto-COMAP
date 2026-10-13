@@ -9,15 +9,15 @@ const plural = (n, s = 's') => (n !== 1 ? s : '')
 const etiquetaTotal = (v) => (v ? nf0.format(Math.round(v)) : '')
 const estiloEtiqueta = { fontSize: 11, fill: 'var(--muted-foreground)' }
 
-const titulo = 'text-[11px] font-semibold uppercase tracking-widest text-muted-foreground'
+const titulo = 'text-sm font-medium'
 
-function Tarjeta({ label, valor, sub, className }) {
+function Total({ label, valor, sub, className }) {
   return (
-    <Card className="p-4">
-      <p className={titulo}>{label}</p>
-      <p className={cn('text-2xl font-medium mt-1.5 tabular-nums', className)}>{valor}</p>
-      {sub && <p className="text-[12px] text-muted-foreground mt-0.5">{sub}</p>}
-    </Card>
+    <div className="p-5">
+      <p className="text-[13px] text-muted-foreground">{label}</p>
+      <p className={cn('mt-1 text-2xl font-medium tabular-nums', className)}>{valor}</p>
+      {sub && <p className="mt-0.5 text-[12px] text-muted-foreground">{sub}</p>}
+    </div>
   )
 }
 
@@ -42,38 +42,39 @@ export function ResumenInversion({ resumen, onCategoria }) {
   const maxCat = resumen.porCategoria[0]?.ui || 1
 
   return (
-    <div className="space-y-3">
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Tarjeta
+    <div className="space-y-5">
+      {/* Los tres totales en una sola tarjeta: menos bordes, misma información */}
+      <Card className="grid divide-y divide-border sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+        <Total
           label="Inversión total"
           valor={fmtUI(resumen.totalUI)}
           sub={`${resumen.total} comprobante${plural(resumen.total)}`}
         />
-        <Tarjeta
-          label="Facturas"
+        <Total
+          label="Facturas · ya gastado"
           valor={fmtUI(resumen.facturaUI)}
-          sub={`${fmtPct(resumen.facturaUI, resumen.totalUI)} del total · ya gastado`}
+          sub={`${fmtPct(resumen.facturaUI, resumen.totalUI)} del total`}
           className="text-primary"
         />
-        <Tarjeta
-          label="Presupuestos"
+        <Total
+          label="Presupuestos · a ejecutar"
           valor={fmtUI(resumen.presupuestoUI)}
-          sub={`${fmtPct(resumen.presupuestoUI, resumen.totalUI)} del total · a ejecutar`}
+          sub={`${fmtPct(resumen.presupuestoUI, resumen.totalUI)} del total`}
           className="text-warning"
         />
-      </div>
+      </Card>
 
       {resumen.sinTipoCount > 0 && (
-        <p className="flex items-center gap-1.5 text-[12px] text-warning">
-          <AlertTriangle size={13} aria-hidden="true" />
+        <p className="-mt-2 flex items-center gap-1.5 px-1 text-[12px] text-muted-foreground">
+          <AlertTriangle size={13} className="text-warning shrink-0" aria-hidden="true" />
           {resumen.sinTipoCount} comprobante{plural(resumen.sinTipoCount)} sin decir si es factura o presupuesto ({fmtUI(resumen.sinTipoUI)}): suma{plural(resumen.sinTipoCount, 'n')} al total pero no a Facturas ni a Presupuestos.
         </p>
       )}
 
-      <div className="grid gap-3 lg:grid-cols-[3fr_4fr]">
-        <Card className="p-4 min-w-0">
+      <div className="grid gap-5 lg:grid-cols-[3fr_4fr]">
+        <Card className="p-5 min-w-0">
           <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
-            <h3 className={titulo}>Inversión por año (UI)</h3>
+            <h3 className={titulo}>Por año de ejecución</h3>
             <Leyenda />
           </div>
           {porAnio.length === 0 ? (
@@ -107,8 +108,8 @@ export function ResumenInversion({ resumen, onCategoria }) {
           )}
         </Card>
 
-        <Card className="p-4 min-w-0">
-          <h3 className={cn(titulo, 'mb-3')}>Inversión por categoría (UI)</h3>
+        <Card className="p-5 min-w-0">
+          <h3 className={cn(titulo, 'mb-3')}>Por categoría</h3>
           <ul className="space-y-1">
             {resumen.porCategoria.map(({ cat, ui }) => {
               const contenido = (
