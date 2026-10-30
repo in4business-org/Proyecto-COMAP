@@ -128,7 +128,7 @@ export function DetalleComprobante({
     ['RUT receptor', c.rut_receptor ? `${c.rut_receptor}${rutRecDistinto ? ' (no coincide)' : ''}` : '--', rutRecDistinto],
     ['Categoría', c.categoria || 'Sin categoría'],
     ['Se ejecuta en', anio ? etiquetaEjercicio(anio, anioBase) : '--'],
-    ['Cargado por', c.texto_extraido ? 'Lectura automática del PDF' : 'A mano o desde Excel'],
+    ['Cargado por', c.texto_extraido ? 'Lectura automática del PDF' : c.archivo ? 'Archivo subido, sin lectura automática' : 'A mano o desde Excel'],
   ]
 
   return (

@@ -59,6 +59,7 @@ export function TablaComprobantes({
   const [savingEdit, setSavingEdit] = useState(false)
   const [selectedRows, setSelectedRows] = useState([])
   const [reprocesando, setReprocesando] = useState(false)
+  const [errorReproceso, setErrorReproceso] = useState(null)
   const [openDropdown, setOpenDropdown] = useState(null)
   const [sortField, setSortField] = useState('numero_factura')
   const [sortDir, setSortDir] = useState('desc')
@@ -146,12 +147,17 @@ export function TablaComprobantes({
       .filter(Boolean)
     if (!archivos.length) return
     setReprocesando(true)
+    setErrorReproceso(null)
     try {
-      const nuevos = await factApi.reprocesar(empresaId, proyectoId, periodo, archivos)
-      setEditedResults(current => [...current.filter(r => !selectedRows.includes(r.id)), ...nuevos])
+      const { comprobantes: nuevos, errores = [] } = await factApi.reprocesar(empresaId, proyectoId, periodo, archivos)
+      // Sólo se reemplazan las filas cuyo archivo se volvió a leer; las que fallaron quedan como estaban
+      const releidos = new Set(nuevos.map(c => c.archivo))
+      const reemplazar = (r) => selectedRows.includes(r.id) && releidos.has(r.archivo)
+      setEditedResults(current => [...current.filter(r => !reemplazar(r)), ...nuevos])
       setSelectedRows([])
+      setErrorReproceso(errores.length ? `No pudimos leer ${errores.map(e => e.archivo).join(', ')}: ${errores[0].mensaje}` : null)
     } catch (err) {
-      console.error(err)
+      setErrorReproceso(`No se pudo reprocesar: ${err.message}`)
     } finally {
       setReprocesando(false)
     }
@@ -200,12 +206,9 @@ export function TablaComprobantes({
               <Button onClick={handleEditToggle} disabled={savingEdit} variant="outline" size="sm" className={btn}>
                 Cancelar
               </Button>
-              {/* Ojo: selectedRows guarda ids y esto indexa por posición, así que
-                  el botón queda siempre deshabilitado. Reprocesar depende de la
-                  migración de archivos y se retoma después. */}
               <Button
                 onClick={handleReprocesarSeleccionadas}
-                disabled={!selectedRows.some(i => editedResults[i]?.archivo) || reprocesando}
+                disabled={!selectedRows.some(id => editedResults.find(r => r.id === id)?.archivo) || reprocesando}
                 variant="secondary"
                 size="sm"
                 className={btn}
@@ -226,6 +229,12 @@ export function TablaComprobantes({
           )}
         </div>
       </div>
+
+      {errorReproceso && (
+        <p role="alert" className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-[12px] text-destructive">
+          {errorReproceso}
+        </p>
+      )}
 
       {/* Cotización y orden */}
       <div className="flex items-center justify-between gap-3 mb-4 text-[12px] text-muted-foreground">

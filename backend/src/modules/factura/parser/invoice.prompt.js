@@ -1,93 +1,46 @@
 const { CATEGORIAS } = require('../../../common/constants/factura');
 
+// La IA sólo lee: moneda, RUT, serie y tipo se devuelven como aparecen en el
+// documento y los normaliza normalizar.js.
 const INVOICE_EXTRACTION_PROMPT = `
-Este documento es una factura de Uruguay.
+Este documento es un comprobante de compra de una empresa uruguaya que presenta
+un proyecto de inversión ante la COMAP. Puede ser una e-factura uruguaya, una
+factura del exterior, una proforma o un presupuesto, en español o en otro idioma.
 
-Extraé la información y devolvé únicamente un array JSON válido.
-No agregues markdown.
-No agregues texto adicional.
-No agregues \`\`\`json.
-La respuesta debe ser solo JSON parseable.
+Devolvé un array JSON con un objeto por comprobante (no por ítem). Casi siempre
+hay uno solo; si el archivo junta varios comprobantes distintos, uno por cada uno.
 
-Debe haber un objeto por comprobante (factura), no por ítem.
+Campos:
+- descripcion: resumen breve en español de qué se compró o qué servicio fue.
+- serie_numero_factura: serie y número tal como aparecen (ej. "A 095921"). En
+  proformas o facturas del exterior, el número del documento.
+- fecha_comprobante: fecha de emisión del comprobante, en formato DD/MM/YYYY.
+  No la de vencimiento, ni la de la resolución o el rango de CAE de DGI.
+- cantidad: 1, salvo que el comprobante sea por un único ítem con cantidad mayor.
+- rut_emisor / razon_social_emisor: quien emite y cobra (el proveedor). La
+  razón social es la que va junto al RUT EMISOR, normalmente arriba con el
+  logo; no la del bloque del cliente. En documentos del exterior, el
+  identificador fiscal que figure, o null.
+- rut_receptor / razon_social_receptor: el cliente al que se le factura (el
+  bloque "RUT RECEPTOR", "Cliente", "Bill to").
+- moneda: la moneda tal como aparece (ej. "$", "UYU", "US$", "USD", "EUR").
+- subtotal: el importe sin impuestos del comprobante completo, ya con los
+  descuentos aplicados (en e-facturas, la suma de los "Subtotal gravado" y
+  "Subtotal no gravado").
+- impuestos: sólo el IVA (suma de todas las tasas). 0 si no tiene IVA. Los
+  aportes, contribuciones y retenciones no son IVA: en un pago a BPS, por
+  ejemplo, impuestos es 0 y subtotal es el importe pagado.
+- total: el total a pagar.
+- Los importes van como número, con punto decimal y sin separador de miles.
+- categoria: una de: ${CATEGORIAS.join(', ')}. Elegí según qué se compró; si no
+  está claro, null.
+- tipo_comprobante: "Factura" para facturas (e-factura, e-ticket, invoice);
+  "Presupuesto" para presupuestos, cotizaciones y proformas; si no está claro, null.
 
-Usá exactamente esta estructura:
-[
-  {
-    "descripcion": "string o null",
-    "serie_numero_factura": "string o null",
-    "fecha_comprobante": "DD/MM/YYYY o null",
-    "cantidad": 1,
-    "rut_emisor": "string o null",
-    "razon_social_emisor": "string o null",
-    "rut_receptor": "string o null",
-    "razon_social_receptor": "string o null",
-    "moneda": "$ | USD | null",
-    "subtotal": number o null,
-    "categoria": "${CATEGORIAS.join(' | ')} | null",
-    "tipo_comprobante": "Factura | Presupuesto | null"
-  }
-]
-
-
-Reglas generales:
-- Debe haber exactamente un objeto por comprobante (factura), sin importar cuántos ítems tenga.
-- En "descripcion" resumí brevemente el contenido de la factura (qué se compró o qué servicio fue).
-- En "subtotal" usá el total o subtotal de la factura completa, no el de un ítem individual.
-- No inventes datos.
-- Si un dato no se puede determinar con seguridad, devolvé null.
-- "subtotal" debe ser numérico, no string.
-- Remové separadores de miles.
-- Usá punto como separador decimal.
-
-Reglas de emisor y receptor:
-- "razon_social_emisor" debe corresponder a la empresa que emite la factura.
-- "razon_social_receptor" debe corresponder al cliente o empresa receptora de la factura.
-- "rut_emisor" debe corresponder al emisor.
-- "rut_receptor" debe corresponder al receptor.
-- Si aparece un bloque con etiquetas como "RUT EMISOR", "RUT RECEPTOR", "RAZON SOCIAL", asociá cada razón social y cada RUT al bloque correcto según la estructura visual del documento.
-- No asumas que cualquier texto junto a "razon social" corresponde al emisor.
-- Nunca confundas receptor con emisor.
-
-Reglas de moneda:
-- Si la factura está en pesos uruguayos, devolver "$".
-- Si la factura está en dólares estadounidenses, devolver "USD".
-- Interpretar:
-  - "PESOS URUGUAYOS", "UYU", "$" -> "$"
-  - "DÓLARES", "USD", "US$", "DOLARES AMERICANOS" -> "USD"
-- No devolver otros formatos como "UYU", "Pesos Uruguayos", "Dólares", "$U" o "US$".
-- El campo "moneda" debe ser exactamente uno de estos valores: "$", "USD", null.
-
-Reglas de serie_numero_factura:
-- Debe devolver serie + número en un único string.
-- Sin espacios.
-- Sin guiones.
-- Sin barras.
-- Sin otros separadores.
-- Conservar letras y ceros a la izquierda.
-- Ejemplos:
-  - "A 095921" -> "A095921"
-  - "A-095921" -> "A095921"
-  - "A / 095921" -> "A095921"
-
-Además, devolvé un campo "categoria" para cada item.
-
-La categoría debe ser una de estas opciones exactas:
-${CATEGORIAS.map((c) => `- '${c}'`).join('\n')}
-
-Reglas para categoria:
-- Elegí la categoría más probable según la descripción del item y el contexto de la factura.
-- Si no es posible inferirla con suficiente confianza, devolver null.
-- No inventar categorías fuera de la lista.
-
-Reglas para tipo_comprobante:
-- Si el documento es una factura comercial (e-factura, factura, factura ticket, etc.), devolver "Factura".
-- Si el documento es un presupuesto, cotización o proforma, devolver "Presupuesto".
-- Si no se puede determinar con seguridad, devolver null.
-
-Validación final:
-- La salida debe ser JSON válido.
-- La salida debe ser un array, incluso si hay un solo item.
+Reglas:
+- No inventes datos: si algo no se puede leer con seguridad, null.
+- No confundas emisor con receptor: guiate por la estructura del documento
+  (bloques "RUT EMISOR", "RUT RECEPTOR", "Cliente", "Bill to", etc.).
 `;
 
 module.exports = { INVOICE_EXTRACTION_PROMPT };

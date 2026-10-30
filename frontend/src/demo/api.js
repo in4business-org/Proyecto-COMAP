@@ -142,9 +142,9 @@ export const proyectos = {
 
 export const facturas = {
   getAllResults: (e, p) => wait(db.facturas[p] || {}),
-  uploadAndProcess: (e, p, per) => wait(db.facturas[p]?.[per] || [], 800),
+  uploadAndProcess: (e, p, per) => wait({ comprobantes: db.facturas[p]?.[per] || [], errores: [] }, 800),
   exportExcel: () => Promise.reject(new Error('En el modo demo no se genera el Excel')),
-  reprocesar: () => wait([]),
+  reprocesar: () => wait({ comprobantes: [], errores: [] }),
   updateResults: (e, p, per, results) => {
     ;(db.facturas[p] ||= {})[per] = results.map((r, i) => ({ ...r, id: r.id || `n${Date.now()}${i}` }))
     return wait(db.facturas[p][per])
