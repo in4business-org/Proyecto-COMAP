@@ -127,25 +127,30 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/subir-y-procesa
     }));
 
     if (!archivosData.length) {
-      return res.json(await leerResultadosDB(proyectoId, periodo));
+      return res.json({ comprobantes: await leerResultadosDB(proyectoId, periodo), errores: [] });
     }
 
-    const nuevos = await facturaService.analizarMultipleArchivos(archivosData);
+    const empresa = await empresaService.getById(empresaId).catch(() => null);
+    const { comprobantes, errores } = await facturaService.analizarMultipleArchivos(archivosData, { empresa });
 
+    // Un archivo que no se pudo leer igual queda como comprobante, vacío y con
+    // su archivo, para reprocesarlo o completarlo a mano sin volver a subirlo
+    const sinLeer = errores.map(e => ({ archivo: e.archivo, texto_extraido: false }));
+    const nuevos = [...comprobantes, ...sinLeer];
     if (nuevos.length > 0) {
       await prisma.factura.createMany({
         data: nuevos.map(r => ({ proyectoId, periodo, ...aFilaFactura(r) })),
       });
     }
 
-    res.json(await leerResultadosDB(proyectoId, periodo));
+    res.json({ comprobantes: await leerResultadosDB(proyectoId, periodo), errores });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message });
   }
 });
 
-// POST  reprocess specific files (returns new data without saving)
+// POST  reprocess specific files (returns new data without saving; los que fallan van en `errores`)
 router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/reprocesar', requireEscritura('facturas'), async (req, res) => {
   try {
     const { empresaId, proyectoId, periodo } = req.params;
@@ -173,8 +178,9 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/reprocesar', re
       return res.status(404).json({ error: 'No se pudieron descargar los archivos indicados' });
     }
 
-    const resultados = await facturaService.analizarMultipleArchivos(archivosData);
-    res.json(resultados);
+    const empresa = await empresaService.getById(empresaId).catch(() => null);
+    const { comprobantes, errores } = await facturaService.analizarMultipleArchivos(archivosData, { empresa });
+    res.json({ comprobantes, errores });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message });
@@ -237,7 +243,8 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/excel', async (
               .then(buffer => ({ buffer, mimeType: getMimeType(f.name), filename: f.name }))
           )
       );
-      const parsedStats = await facturaService.analizarMultipleArchivos(archivosData);
+      const empresa = await empresaService.getById(empresaId).catch(() => null);
+      const { comprobantes: parsedStats } = await facturaService.analizarMultipleArchivos(archivosData, { empresa });
       if (puedeEscribir(req.acceso, 'facturas')) {
         await guardarResultadosDB(proyectoId, periodo, parsedStats);
         resultados = await leerResultadosDB(proyectoId, periodo);

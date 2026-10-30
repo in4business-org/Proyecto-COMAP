@@ -82,7 +82,7 @@ export default function ProyectoDetail() {
   const [abiertoId, setAbiertoId] = useState(null)
   const [aviso, setAviso] = useState(null) // { texto, anterior?, error? }
   const [ocupado, setOcupado] = useState(false)
-  const [subiendo, setSubiendo] = useState(0)
+  const [subiendo, setSubiendo] = useState(null) // { hechos, total } mientras se suben PDF
   const [confirmarExport, setConfirmarExport] = useState(false)
   const [exportando, setExportando] = useState(false)
   const [planPendiente, setPlanPendiente] = useState(false)
@@ -194,20 +194,39 @@ export default function ProyectoDetail() {
   }
 
   // ── Subir PDFs e importar Excel ────────────────────────────
+  // Se mandan de a pocos archivos por pedido: cada pedido tarda unos segundos y
+  // no llega al límite de tiempo del servidor aunque suban 50 PDF juntos. Si un
+  // paquete falla, se pierden sólo esos archivos.
+  const ARCHIVOS_POR_PEDIDO = 3
   const subirArchivos = async (files) => {
-    setSubiendo(files.length)
+    setSubiendo({ hechos: 0, total: files.length })
     setAviso(null)
     const antes = comprobantes?.length || 0
-    try {
-      const lista = await factApi.uploadAndProcess(empresaId, proyectoId, periodo, files)
-      aplicar(lista)
-      const nuevos = (lista?.length || 0) - antes
-      setAviso({ texto: nuevos > 0 ? `Leímos ${nuevos} comprobante${plural(nuevos)} nuevo${plural(nuevos)}. Revisá que los datos estén bien.` : 'Subimos los archivos pero no encontramos comprobantes nuevos.' })
-    } catch (err) {
-      setAviso({ texto: `No se pudieron subir los archivos: ${err.message}`, error: true })
-    } finally {
-      setSubiendo(0)
+    let lista = comprobantes || []
+    const errores = []
+    for (let i = 0; i < files.length; i += ARCHIVOS_POR_PEDIDO) {
+      const paquete = files.slice(i, i + ARCHIVOS_POR_PEDIDO)
+      try {
+        const r = await factApi.uploadAndProcess(empresaId, proyectoId, periodo, paquete)
+        lista = r.comprobantes
+        errores.push(...(r.errores || []))
+        aplicar(lista)
+      } catch (err) {
+        errores.push(...paquete.map((f) => ({ archivo: f.name, mensaje: `No se pudo subir (${err.message})` })))
+      }
+      setSubiendo({ hechos: Math.min(i + ARCHIVOS_POR_PEDIDO, files.length), total: files.length })
     }
+    // Los archivos que no se pudieron leer igual quedan como comprobante vacío; los que no se pudieron subir, no
+    const leidos = (lista?.length || 0) - antes - errores.filter((e) => !e.mensaje.startsWith('No se pudo subir')).length
+    if (errores.length) {
+      const n = errores.length
+      const cuales = n === 1 ? errores[0].archivo : `${n} archivos`
+      const yLeidos = leidos > 0 ? ` Leímos ${leidos} comprobante${plural(leidos)} bien.` : ''
+      setAviso({ texto: `No pudimos leer ${cuales}: ${errores[0].mensaje}${yLeidos}`, error: true })
+    } else {
+      setAviso({ texto: leidos > 0 ? `Leímos ${leidos} comprobante${plural(leidos)} nuevo${plural(leidos)}. Revisá que los datos estén bien.` : 'Subimos los archivos pero no encontramos comprobantes nuevos.' })
+    }
+    setSubiendo(null)
   }
 
   const importarExcel = async (file) => {
@@ -472,7 +491,7 @@ export default function ProyectoDetail() {
               />
             )}
 
-            <ZonaArchivo envolver multiple tipos={TIPOS_SUBIDA} maxMb={15} disabled={!puedeEditar || subiendo > 0} onArchivos={subirArchivos} onError={(e) => e && setAviso({ texto: e, error: true })}>
+            <ZonaArchivo envolver multiple tipos={TIPOS_SUBIDA} maxMb={15} disabled={!puedeEditar || Boolean(subiendo)} onArchivos={subirArchivos} onError={(e) => e && setAviso({ texto: e, error: true })}>
               {({ elegir }) => (
                 <>
                   {cargandoComp ? (
@@ -499,8 +518,8 @@ export default function ProyectoDetail() {
                   )}
                   {puedeEditar && (
                     <div className="flex flex-col items-center gap-1 border-t border-border px-4 py-4 text-center text-[13px] text-muted-foreground">
-                      {subiendo > 0 ? (
-                        <span className="flex items-center gap-2 text-primary"><Spinner size={14} className="text-primary" /> Leyendo {subiendo} archivo{plural(subiendo)}... puede tardar un minuto</span>
+                      {subiendo ? (
+                        <span className="flex items-center gap-2 text-primary"><Spinner size={14} className="text-primary" /> Leyendo {subiendo.hechos} de {subiendo.total} archivo{plural(subiendo.total)}...</span>
                       ) : (
                         <>
                           <span>

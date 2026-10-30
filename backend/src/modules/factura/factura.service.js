@@ -1,67 +1,47 @@
-const { parseInvoice } = require('./parser');
-
-/**
- * Maps Gemini item fields to the format the rest of the app expects
- * (excel.service, routes, etc.)
- */
-function mapGeminiItemToLegacy(item, archivo) {
-  return {
-    archivo,
-    descripcion: item.descripcion || null,
-    numero_factura: item.serie_numero_factura || null,
-    proveedor: item.razon_social_emisor || null,
-    rut: item.rut_emisor || null,
-    fecha: item.fecha_comprobante || null,
-    monto: item.subtotal || null,
-    moneda: item.moneda === '$' ? 'UYU' : (item.moneda || null),
-    cantidad: item.cantidad || 1,
-    categoria: item.categoria || null,
-    rut_receptor: item.rut_receptor || null,
-    razon_social_receptor: item.razon_social_receptor || null,
-    tipo_comprobante: item.tipo_comprobante || null,
-    texto_extraido: true,
-  };
-}
+const { parseInvoice, ErrorLectura } = require('./parser');
+const { normalizarComprobante } = require('./parser/normalizar');
 
 class FacturaService {
   /**
-   * Analyze a single invoice file (PDF or image).
-   * Returns an array of line-item objects in legacy format.
+   * Lee un archivo (PDF o imagen) con la IA.
+   * Devuelve { comprobantes } si salió bien, o { error } con un mensaje para
+   * mostrar en pantalla si no se pudo leer.
+   * `empresa` (opcional) es la del proyecto: se usa para no cruzar emisor y receptor.
    */
-  async analizarBuffer(fileBuffer, mimeType, archivo) {
+  async analizarBuffer(fileBuffer, mimeType, archivo, { empresa } = {}) {
     try {
       const items = await parseInvoice({ fileBuffer, mimeType });
-      return items.map(item => mapGeminiItemToLegacy(item, archivo));
+      return { comprobantes: items.map(item => normalizarComprobante(item, archivo, { empresa })) };
     } catch (error) {
-      console.error(`Error analizando ${archivo}:`, error.message);
-      return [{
-        archivo,
-        numero_factura: null,
-        proveedor: null,
-        rut: null,
-        fecha: null,
-        monto: null,
-        moneda: null,
-        texto_extraido: false,
-      }];
+      console.error(`Error analizando ${archivo}:`, error.causa?.message || error.message);
+      const mensaje = error instanceof ErrorLectura
+        ? error.message
+        : 'No pudimos leer el archivo. Probá reprocesarlo o completá los datos a mano.';
+      return { error: mensaje };
     }
   }
 
   /**
-   * Analyze multiple files from memory buffers
-   * @param {Array<{buffer: Buffer, mimeType: string, filename: string}>} archivosData 
+   * Lee varios archivos, de a tres por vez.
+   * @param {Array<{buffer: Buffer, mimeType: string, filename: string}>} archivosData
+   * @param {{ empresa?: { rut: string, nombre: string, razon_social?: string } }} [opciones]
+   * @returns {Promise<{ comprobantes: Array, errores: Array<{archivo: string, mensaje: string}> }>}
    */
-  async analizarMultipleArchivos(archivosData) {
+  async analizarMultipleArchivos(archivosData, { empresa } = {}) {
     const BATCH_SIZE = 3;
-    const resultados = [];
+    const comprobantes = [];
+    const errores = [];
     for (let i = 0; i < archivosData.length; i += BATCH_SIZE) {
       const batch = archivosData.slice(i, i + BATCH_SIZE);
-      const batchResults = await Promise.all(
-        batch.map(d => this.analizarBuffer(d.buffer, d.mimeType, d.filename))
+      const resultados = await Promise.all(
+        batch.map(d => this.analizarBuffer(d.buffer, d.mimeType, d.filename, { empresa }))
       );
-      resultados.push(...batchResults.flat());
+      resultados.forEach((r, j) => {
+        if (r.error) errores.push({ archivo: batch[j].filename, mensaje: r.error });
+        else comprobantes.push(...r.comprobantes);
+      });
     }
-    return resultados;
+    return { comprobantes, errores };
   }
 }
 

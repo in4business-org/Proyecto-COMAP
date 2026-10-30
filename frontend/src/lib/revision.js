@@ -37,6 +37,14 @@ export function indiceDuplicados(comprobantes) {
  */
 export function problemasDe(c, { rutEmpresa, duplicados } = {}) {
   const problemas = []
+  // Se subió el archivo pero la lectura automática falló: el comprobante quedó vacío
+  if (c.archivo && !c.texto_extraido && c.monto == null && !c.proveedor) {
+    return [{
+      tipo: 'lectura',
+      texto: 'No pudimos leer el archivo',
+      ayuda: 'Probá reprocesarlo desde Editar, o completá los datos a mano mirando el comprobante.',
+    }]
+  }
   const rutRec = soloDigitos(c.rut_receptor)
   const rutEmp = soloDigitos(rutEmpresa)
   if (rutRec && rutEmp && rutRec !== rutEmp) {
@@ -45,6 +53,9 @@ export function problemasDe(c, { rutEmpresa, duplicados } = {}) {
       texto: 'El RUT del receptor no es el de la empresa',
       ayuda: 'La factura está a nombre de otro RUT. Si es un error del proveedor, hay que pedirle una nota de crédito y una factura nueva.',
     })
+  }
+  if (!c.proveedor && !c.rut) {
+    problemas.push({ tipo: 'proveedor', texto: 'Falta el proveedor', ayuda: 'No pudimos leer quién emitió el comprobante. Completalo a mano mirando el PDF.' })
   }
   if (c.monto == null) {
     problemas.push({ tipo: 'monto', texto: 'Falta el monto', ayuda: 'No pudimos leer el total. Completalo a mano mirando el comprobante.' })
