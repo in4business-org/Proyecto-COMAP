@@ -151,6 +151,14 @@ export const facturas = {
   },
   downloadTemplate: () => Promise.reject(new Error('En el modo demo no se baja el template')),
   importar: (e, p, per) => wait(db.facturas[p]?.[per] || []),
+  linkArchivo: () => Promise.reject(new Error('En el modo demo no hay archivos para bajar')),
+  subirArchivo: (e, p, id, file) => {
+    for (const lista of Object.values(db.facturas[p] || {})) {
+      const f = lista.find((x) => x.id === id)
+      if (f) { f.archivo = file.name; return wait(lista, 700) }
+    }
+    return Promise.reject(new Error('Comprobante no encontrado'))
+  },
 }
 
 export const checklist = {

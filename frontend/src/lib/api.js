@@ -162,6 +162,15 @@ export const facturas = {
     fd.append('file', file);
     return request(`/empresas/${empresaId}/proyectos/${proyectoId}/${periodo}/importar`, { method: 'POST', body: fd });
   },
+  // Link temporal (5 min) al archivo de un comprobante: { url, nombre }
+  linkArchivo: (empresaId, proyectoId, facturaId, { ver = false } = {}) =>
+    request(`/empresas/${empresaId}/proyectos/${proyectoId}/facturas/${facturaId}/archivo${ver ? '?modo=ver' : ''}`),
+  // Adjunta (o reemplaza) el archivo; devuelve los comprobantes del período
+  subirArchivo: (empresaId, proyectoId, facturaId, file) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return request(`/empresas/${empresaId}/proyectos/${proyectoId}/facturas/${facturaId}/archivo`, { method: 'POST', body: fd });
+  },
 };
 
 // -- Checklist

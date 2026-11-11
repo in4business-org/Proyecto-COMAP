@@ -2,6 +2,7 @@ const {
   S3Client,
   PutObjectCommand,
   GetObjectCommand,
+  HeadObjectCommand,
   DeleteObjectCommand,
   ListObjectsV2Command,
 } = require('@aws-sdk/client-s3');
@@ -123,15 +124,44 @@ class S3StorageService {
   }
 
   /**
+   * Indica si el objeto existe en el bucket.
+   * @param {string} key
+   * @returns {Promise<boolean>}
+   */
+  async exists(key) {
+    try {
+      await s3.send(new HeadObjectCommand({ Bucket: BUCKET, Key: key }));
+      return true;
+    } catch (error) {
+      const status = error?.$metadata?.httpStatusCode;
+      if (status === 404 || error?.name === 'NotFound') return false;
+      // Sin s3:ListBucket, S3 contesta 403 (y no 404) cuando el objeto no existe
+      if (status === 403) {
+        console.warn(`s3.exists("${key}"): 403, se toma como inexistente`);
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  /**
    * Genera una URL firmada temporal para descargar el objeto.
    * (Reemplaza a getPublicUrl de Supabase; el bucket S3 es privado.)
    * @param {string} key
    * @param {number} expiresIn  segundos (default 1 hora)
+   * @param {{ disposition?: string, contentType?: string }} [opciones]
+   *   `disposition`: Content-Disposition que S3 devuelve con el archivo
+   *   (p. ej. `attachment; filename="x.pdf"` para que se descargue).
    */
-  async getSignedUrl(key, expiresIn = 3600) {
+  async getSignedUrl(key, expiresIn = 3600, { disposition, contentType } = {}) {
     return getSignedUrl(
       s3,
-      new GetObjectCommand({ Bucket: BUCKET, Key: key }),
+      new GetObjectCommand({
+        Bucket: BUCKET,
+        Key: key,
+        ...(disposition ? { ResponseContentDisposition: disposition } : {}),
+        ...(contentType ? { ResponseContentType: contentType } : {}),
+      }),
       { expiresIn }
     );
   }

@@ -193,6 +193,34 @@ export default function ProyectoDetail() {
     await guardar(lista, `Guardaste los cambios de ${datos.proveedor || 'el comprobante'}.`)
   }
 
+  // ── Archivo de un comprobante (ver, bajar, adjuntar) ───────
+  const verArchivo = async (c, { ver }) => {
+    // La pestaña se abre antes del pedido: si se abre después, el navegador la bloquea
+    const pestana = ver ? window.open('', '_blank') : null
+    try {
+      const { url } = await factApi.linkArchivo(empresaId, proyectoId, c.id, { ver })
+      if (pestana) {
+        pestana.location.href = url
+      } else {
+        const a = document.createElement('a')
+        a.href = url
+        a.rel = 'noopener'
+        a.click()
+      }
+    } catch (err) {
+      pestana?.close()
+      throw err
+    }
+  }
+  const subirArchivoDe = async (c, file) => {
+    const lista = await factApi.subirArchivo(empresaId, proyectoId, c.id, file)
+    const nuevo = lista.find((r) => r.id === c.id)
+    // Con cambios del plan sin guardar sólo se toca este comprobante, para no perderlos
+    if (planPendiente) setComprobantes((prev) => prev.map((r) => (r.id === c.id ? { ...r, archivo: nuevo?.archivo } : r)))
+    else aplicar(lista)
+    setAviso({ texto: `Subiste el archivo de ${c.proveedor || 'el comprobante'}.` })
+  }
+
   // ── Subir PDFs e importar Excel ────────────────────────────
   // Se mandan de a pocos archivos por pedido: cada pedido tarda unos segundos y
   // no llega al límite de tiempo del servidor aunque suban 50 PDF juntos. Si un
@@ -301,6 +329,8 @@ export default function ProyectoDetail() {
       onGuardar={corregir}
       onEliminar={(c) => borrar(new Set([c.id]))}
       onCerrar={() => setAbiertoId(null)}
+      onVerArchivo={verArchivo}
+      onSubirArchivo={subirArchivoDe}
     />
   )
 

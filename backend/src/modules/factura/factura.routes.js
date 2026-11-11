@@ -187,6 +187,100 @@ router.post('/empresas/:empresaId/proyectos/:proyectoId/:periodo/reprocesar', re
   }
 });
 
+// ── PDF de un comprobante ────────────────────────────────
+
+/** Comprobante del proyecto, o null si no existe o es de otro proyecto */
+function buscarFactura(proyectoId, facturaId) {
+  return prisma.factura.findFirst({ where: { id: facturaId, proyectoId } });
+}
+
+/** Clave en S3 del archivo de un comprobante (misma convención que subir-y-procesar) */
+function claveArchivo(empresaId, proyectoId, periodo, archivo) {
+  return `proyectos/${empresaId}/${proyectoId}/${periodo}/${archivo}`;
+}
+
+/** Content-Disposition con el nombre original, también si tiene tildes o eñes */
+function disposicion(tipo, nombre) {
+  const ascii = nombre.replace(/[^\x20-\x7E]/g, '_').replace(/["\\]/g, '_');
+  const utf8 = encodeURIComponent(nombre).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+  return `${tipo}; filename="${ascii}"; filename*=UTF-8''${utf8}`;
+}
+
+/**
+ * Nombre libre para un archivo nuevo en la carpeta del período: si otro
+ * comprobante ya usa ese nombre (un PDF puede traer varios comprobantes) se le
+ * agrega " (2)", " (3)"... para no pisarle el archivo.
+ */
+async function nombreLibre(proyectoId, periodo, facturaId, original) {
+  const limpio = path.basename(original).replace(/[\\/]/g, '_');
+  const ext = path.extname(limpio);
+  const base = limpio.slice(0, limpio.length - ext.length);
+  const usados = new Set(
+    (await prisma.factura.findMany({
+      where: { proyectoId, periodo, archivo: { not: null }, id: { not: facturaId } },
+      select: { archivo: true },
+    })).map((f) => f.archivo)
+  );
+  let nombre = limpio;
+  for (let n = 2; usados.has(nombre); n++) nombre = `${base} (${n})${ext}`;
+  return nombre;
+}
+
+// GET  link temporal para ver (?modo=ver) o bajar el archivo de un comprobante.
+// Devuelve { url, nombre }: el navegador va directo a S3 con una URL firmada,
+// así el archivo no pasa por el backend (y no choca con el límite de Vercel).
+router.get('/empresas/:empresaId/proyectos/:proyectoId/facturas/:facturaId/archivo', async (req, res) => {
+  try {
+    const { empresaId, proyectoId, facturaId } = req.params;
+    const factura = await buscarFactura(proyectoId, facturaId);
+    if (!factura) return res.status(404).json({ error: 'Comprobante no encontrado' });
+    if (!factura.archivo) return res.status(404).json({ error: 'Este comprobante no tiene archivo' });
+
+    const key = claveArchivo(empresaId, proyectoId, factura.periodo, factura.archivo);
+    if (!(await storageService.exists(key))) {
+      return res.status(404).json({ error: 'No encontramos el archivo guardado. Podés volver a subirlo.' });
+    }
+
+    const tipo = req.query.modo === 'ver' ? 'inline' : 'attachment';
+    const url = await storageService.getSignedUrl(key, 300, {
+      disposition: disposicion(tipo, factura.archivo),
+      contentType: getMimeType(factura.archivo),
+    });
+    res.json({ url, nombre: factura.archivo });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST  adjuntar (o reemplazar) el archivo de un comprobante. No vuelve a leer
+// los datos: sólo guarda el PDF y lo vincula. Devuelve los comprobantes del período.
+router.post('/empresas/:empresaId/proyectos/:proyectoId/facturas/:facturaId/archivo', requireEscritura('facturas'), upload.single('file'), async (req, res) => {
+  try {
+    const { empresaId, proyectoId, facturaId } = req.params;
+    if (!req.file?.buffer) return res.status(400).json({ error: 'No se recibió archivo' });
+    if (!isSupported(req.file.originalname)) {
+      return res.status(400).json({ error: 'El archivo tiene que ser PDF o imagen (PNG, JPG, WEBP)' });
+    }
+
+    const factura = await buscarFactura(proyectoId, facturaId);
+    if (!factura) return res.status(404).json({ error: 'Comprobante no encontrado' });
+
+    const nombre = await nombreLibre(proyectoId, factura.periodo, factura.id, req.file.originalname);
+    await storageService.uploadFile(
+      claveArchivo(empresaId, proyectoId, factura.periodo, nombre),
+      req.file.buffer,
+      getMimeType(nombre)
+    );
+    await prisma.factura.update({ where: { id: factura.id }, data: { archivo: nombre } });
+
+    res.json(await leerResultadosDB(proyectoId, factura.periodo));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET  retrieve persisted results for ALL periodos in one query
 router.get('/empresas/:empresaId/proyectos/:proyectoId/all-resultados', async (req, res) => {
   try {

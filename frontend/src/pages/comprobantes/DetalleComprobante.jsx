@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { FileText, Trash2, X } from 'lucide-react'
+import { Download, ExternalLink, FileText, RefreshCw, Trash2, X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input, Label } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/loading'
+import { ZonaArchivo } from '@/components/ZonaArchivo'
 import { cn } from '@/lib/utils'
 import { anioDe } from '@/lib/fechas'
 import { aUI, fmtMonto, fmtUI } from '@/lib/inversion'
@@ -12,6 +13,85 @@ import { CATEGORIAS, MONEDAS, TIPOS_COMPROBANTE } from '@/lib/constantes'
 import { ESTADOS } from '@/lib/revision'
 
 const soloDigitos = (v) => String(v || '').replace(/\D/g, '')
+const TIPOS_ARCHIVO = ['pdf', 'png', 'jpg', 'jpeg', 'webp']
+
+/**
+ * El archivo del comprobante: si tiene, se puede ver, bajar o reemplazar; si
+ * no tiene, quien puede editar lo sube acá mismo.
+ */
+function ArchivoComprobante({ comprobante: c, puedeEditar, onVerArchivo, onSubirArchivo }) {
+  const [ocupado, setOcupado] = useState(null) // 'ver' | 'bajar' | 'subir'
+  const [error, setError] = useState(null)
+  useEffect(() => { setError(null); setOcupado(null) }, [c.id])
+
+  const hacer = async (accion, fn) => {
+    setOcupado(accion)
+    setError(null)
+    try {
+      await fn()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setOcupado(null)
+    }
+  }
+  const subir = ([file]) => hacer('subir', () => onSubirArchivo(c, file))
+
+  if (!c.archivo) {
+    if (!puedeEditar) {
+      return (
+        <div className="flex h-32 flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-border bg-muted/40 text-center text-[12px] text-muted-foreground">
+          <FileText size={20} aria-hidden="true" />
+          Este comprobante no tiene PDF
+        </div>
+      )
+    }
+    return (
+      <div>
+        {ocupado === 'subir' ? (
+          <div className="flex h-32 flex-col items-center justify-center gap-2 rounded-xl border-[1.5px] border-dashed border-primary/50 bg-primary/5 text-[13px] text-primary">
+            <Spinner size={18} /> Subiendo el archivo...
+          </div>
+        ) : (
+          <ZonaArchivo
+            tipos={TIPOS_ARCHIVO}
+            maxMb={15}
+            titulo="Este comprobante no tiene PDF. Subilo acá"
+            onArchivos={subir}
+          />
+        )}
+        {error && <p role="alert" className="mt-2 text-[12px] text-destructive">{error}</p>}
+      </div>
+    )
+  }
+
+  return (
+    <ZonaArchivo envolver tipos={TIPOS_ARCHIVO} maxMb={15} disabled={!puedeEditar || !!ocupado} onArchivos={subir} onError={setError} className="rounded-lg">
+      {({ elegir }) => (
+        <div className="space-y-3 rounded-lg border border-border bg-muted/40 px-3 py-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <FileText size={20} className="shrink-0 text-primary" aria-hidden="true" />
+            <span className="min-w-0 truncate text-[13px] font-medium" title={c.archivo}>{c.archivo}</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" disabled={!!ocupado} onClick={() => hacer('ver', () => onVerArchivo(c, { ver: true }))}>
+              {ocupado === 'ver' ? <Spinner size={14} /> : <ExternalLink size={14} aria-hidden="true" />} Ver
+            </Button>
+            <Button size="sm" variant="outline" disabled={!!ocupado} onClick={() => hacer('bajar', () => onVerArchivo(c, { ver: false }))}>
+              {ocupado === 'bajar' ? <Spinner size={14} /> : <Download size={14} aria-hidden="true" />} Descargar
+            </Button>
+            {puedeEditar && (
+              <Button size="sm" variant="ghost" disabled={!!ocupado} onClick={elegir} className="text-muted-foreground">
+                {ocupado === 'subir' ? <Spinner size={14} /> : <RefreshCw size={14} aria-hidden="true" />} Reemplazar
+              </Button>
+            )}
+          </div>
+          {error && <p role="alert" className="text-[12px] text-destructive">{error}</p>}
+        </div>
+      )}
+    </ZonaArchivo>
+  )
+}
 
 function Select({ id, value, onChange, opciones, vacio = 'Sin elegir' }) {
   return (
@@ -103,13 +183,12 @@ function Formulario({ comprobante, opcionesEjercicio, onGuardar, onCancelar }) {
 }
 
 /**
- * Panel con el detalle de un comprobante: qué revisar, los datos y las
- * acciones. La vista previa del PDF queda para después de la migración de
- * archivos.
+ * Panel con el detalle de un comprobante: qué revisar, el archivo (ver, bajar
+ * o subir), los datos y las acciones.
  */
 export function DetalleComprobante({
   comprobante: c, cotizacion, rutEmpresa, anioBase, opcionesEjercicio, puedeEditar,
-  onGuardar, onEliminar, onCerrar,
+  onGuardar, onEliminar, onCerrar, onVerArchivo, onSubirArchivo,
 }) {
   const [editando, setEditando] = useState(false)
   useEffect(() => { setEditando(false) }, [c?.id])
@@ -166,10 +245,7 @@ export function DetalleComprobante({
         />
       ) : (
         <>
-          <div className="flex h-32 flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-border bg-muted/40 text-center text-[12px] text-muted-foreground">
-            <FileText size={20} aria-hidden="true" />
-            {c.archivo ? <>Pronto vas a poder ver el PDF acá<span className="font-mono text-[11px]">{c.archivo}</span></> : 'Este comprobante no tiene PDF'}
-          </div>
+          <ArchivoComprobante comprobante={c} puedeEditar={puedeEditar} onVerArchivo={onVerArchivo} onSubirArchivo={onSubirArchivo} />
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-[13px]">
             {datos.map(([k, v, alerta]) => (
               <div key={k} className="contents">
